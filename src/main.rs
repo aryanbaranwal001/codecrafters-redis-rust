@@ -1,6 +1,8 @@
 #![allow(unused_imports)]
 use std::net::TcpListener;
-use std::io::Write;
+use std::io::{ Write, Read };
+
+use bytes::buf;
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -10,14 +12,32 @@ fn main() {
     //
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut _stream) => {
+    for result_stream in listener.incoming() {
+        match result_stream {
+            Ok(mut stream) => {
                 println!("accepted new connection");
 
-                let response = format!("+PONG\r\n");
+                let mut buffer = [0; 1024];
 
-                _stream.write_all(response.as_bytes()).expect("failed to send the data");
+                loop {
+                    let bytes_read = stream.read(&mut buffer).unwrap();
+
+                    let received = String::from_utf8_lossy(&buffer[..bytes_read])
+                        .trim()
+                        .to_owned();
+
+                    println!("This is what is received {:?}", received);
+
+                    if received == "*1\r\n$4\r\nPING" {
+                        let response = format!("+PONG\r\n");
+
+                        stream.write_all(response.as_bytes()).expect("failed to send the data");
+                    } else {
+                        stream
+                            .write_all("Go Fuck Yourself".as_bytes())
+                            .expect("failed to send the data");
+                    }
+                }
             }
             Err(e) => {
                 println!("error: {}", e);
