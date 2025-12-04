@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::{ Arc, Mutex };
 
+use tracing_subscriber::fmt::format;
+
 mod types;
 mod helper;
 
@@ -37,7 +39,7 @@ fn main() {
                                     .trim()
                                     .to_owned();
 
-                                println!("received string ==> {:?}", received);
+                                println!("logger::received string ==> {:?}", received);
 
                                 stream = handle_connection(&buffer, stream, &store_clone);
                             }
@@ -69,9 +71,13 @@ fn handle_connection(
             let no_of_elements;
             (no_of_elements, counter) = helper::parse_number(bytes_received, counter);
 
-            println!("no of elements in resp array ==> {}", no_of_elements);
+            // println!("logger::no of elements in resp array ==> {}", no_of_elements);
 
             let elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
+
+            // for rpush
+            // A list which contains all other lists
+            let mut main_list: Vec<types::List> = Vec::new();
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
@@ -105,7 +111,7 @@ fn handle_connection(
 
                     map.insert(elements_array[1].clone(), value_entry);
 
-                    println!("map ==> {:?}", map);
+                    println!("logger::map ==> {:?}", map);
 
                     let _ = stream.write_all("+OK\r\n".as_bytes());
                 }
@@ -142,6 +148,29 @@ fn handle_connection(
                     } else {
                         println!("Key Doesn't exists");
                     }
+                }
+
+                "rpush" => {
+                    if
+                        let Some(inner) = main_list
+                            .iter_mut()
+                            .find(|inner| inner.name == elements_array[1])
+                    {
+                        inner.vec.push(elements_array[2].clone());
+
+                        let data_to_send = format!(":{}\r\n", inner.vec.len());
+
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    } else {
+                        let mut new_list = types::List::new(elements_array[1].as_str());
+                        new_list.vec.push(elements_array[2].clone());
+
+                        let data_to_send = format!(":{}\r\n", new_list.vec.len());
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                        main_list.push(new_list);
+                    }
+
+                    println!("logger::main_list => {:?}", main_list);
                 }
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());

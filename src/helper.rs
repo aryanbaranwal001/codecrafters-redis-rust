@@ -78,7 +78,7 @@ pub fn parsing_elements(
             _ => {}
         }
     }
-    println!("elements array  ==> {:?}", elements_array);
+    println!("logger::elements array  ==> {:?}", elements_array);
 
     elements_array
 }
