@@ -160,7 +160,9 @@ fn handle_connection(
                             .iter_mut()
                             .find(|inner| inner.name == elements_array[1])
                     {
-                        inner.vec.push(elements_array[2].clone());
+                        for i in 2..elements_array.len() {
+                            inner.vec.push(elements_array[i].clone());
+                        }
 
                         println!("no of elements in list {}", inner.vec.len());
 
@@ -169,7 +171,10 @@ fn handle_connection(
                         let _ = stream.write_all(data_to_send.as_bytes());
                     } else {
                         let mut new_list = types::List::new(elements_array[1].as_str());
-                        new_list.vec.push(elements_array[2].clone());
+
+                        for i in 2..elements_array.len() {
+                            new_list.vec.push(elements_array[i].clone());
+                        }
 
                         let data_to_send = format!(":{}\r\n", new_list.vec.len());
                         let _ = stream.write_all(data_to_send.as_bytes());
