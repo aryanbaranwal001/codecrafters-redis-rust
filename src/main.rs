@@ -42,12 +42,7 @@ fn main() {
 
                                 println!("logger::received string ==> {:?}", received);
 
-                                stream = handle_connection(
-                                    &buffer,
-                                    stream,
-                                    &store_clone,
-                                    &main_list_clone
-                                );
+                                stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone);
                             }
                             Err(e) => {
                                 println!("error reading stream: {e}");
@@ -102,10 +97,7 @@ fn handle_connection(
                     let mut expires_at = None;
 
                     if let Some(time_setter_args) = elements_array.get(3) {
-                        expires_at = helper::handle_expiry(
-                            time_setter_args,
-                            elements_array.clone()
-                        );
+                        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
                     }
 
                     let value_entry = types::ValueEntry {
@@ -130,21 +122,13 @@ fn handle_connection(
                                 } else {
                                     println!("value, word {:?}", val.value);
 
-                                    let value_to_send = format!(
-                                        "${}\r\n{}\r\n",
-                                        val.value.as_bytes().len(),
-                                        val.value
-                                    );
+                                    let value_to_send = format!("${}\r\n{}\r\n", val.value.as_bytes().len(), val.value);
                                     println!("value to send {:?}", value_to_send);
                                     let _ = stream.write_all(value_to_send.as_bytes());
                                 }
                             }
                             None => {
-                                let value_to_send = format!(
-                                    "${}\r\n{}\r\n",
-                                    val.value.as_bytes().len(),
-                                    val.value
-                                );
+                                let value_to_send = format!("${}\r\n{}\r\n", val.value.as_bytes().len(), val.value);
                                 println!("value to send {:?}", value_to_send);
                                 let _ = stream.write_all(value_to_send.as_bytes());
                             }
@@ -155,11 +139,7 @@ fn handle_connection(
                 }
 
                 "rpush" => {
-                    if
-                        let Some(inner) = main_list
-                            .iter_mut()
-                            .find(|inner| inner.name == elements_array[1])
-                    {
+                    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         for i in 2..elements_array.len() {
                             inner.vec.push(elements_array[i].clone());
                         }
@@ -183,12 +163,9 @@ fn handle_connection(
 
                     println!("logger::main_list => {:?}", main_list);
                 }
+
                 "lpush" => {
-                    if
-                        let Some(inner) = main_list
-                            .iter_mut()
-                            .find(|inner| inner.name == elements_array[1])
-                    {
+                    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         for i in 2..elements_array.len() {
                             inner.vec.insert(0, elements_array[i].clone());
                         }
@@ -214,11 +191,7 @@ fn handle_connection(
                 }
 
                 "lrange" => {
-                    if
-                        let Some(inner) = main_list
-                            .iter_mut()
-                            .find(|inner| inner.name == elements_array[1])
-                    {
+                    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         let mut starting_index = elements_array[2].parse::<i32>().unwrap();
                         let mut ending_index = elements_array[3].parse::<i32>().unwrap();
 
@@ -238,8 +211,7 @@ fn handle_connection(
                                 starting_index = 0;
                             } else {
                                 starting_index =
-                                    (length_of_list as i32) +
-                                    -1 * ((-1 * starting_index) % (length_of_list as i32));
+                                    (length_of_list as i32) + -1 * ((-1 * starting_index) % (length_of_list as i32));
                             }
                         }
 
@@ -248,16 +220,11 @@ fn handle_connection(
                                 ending_index = 0;
                             } else {
                                 ending_index =
-                                    (length_of_list as i32) +
-                                    -1 * ((-1 * ending_index) % (length_of_list as i32));
+                                    (length_of_list as i32) + -1 * ((-1 * ending_index) % (length_of_list as i32));
                             }
                         }
 
-                        println!(
-                            "starting index {}, ending index  {}",
-                            starting_index,
-                            ending_index
-                        );
+                        println!("starting index {}, ending index  {}", starting_index, ending_index);
 
                         if starting_index >= (length_of_list as i32) {
                             let _ = stream.write_all(b"*0\r\n");
@@ -294,6 +261,17 @@ fn handle_connection(
                         let _ = stream.write_all(b"*0\r\n");
                     }
                 }
+
+                "llen" => {
+                    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+                        let data_to_send = format!(":{}\r\n", inner.vec.len());
+
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    } else {
+                        let _ = stream.write_all(b":0\r\n");
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
