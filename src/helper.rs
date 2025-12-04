@@ -15,7 +15,7 @@ pub fn handle_expiry(time_setter_args: &str, elements_array: Vec<String>) -> Opt
             Some(Instant::now() + std::time::Duration::from_millis(time as u64))
         }
 
-        _ => { None }
+        _ => None,
     }
 }
 
@@ -53,7 +53,7 @@ pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize)
 pub fn parsing_elements(
     bytes_received: &[u8],
     mut counter: usize,
-    no_of_elements: usize
+    no_of_elements: usize,
 ) -> Vec<String> {
     let mut elements_array: Vec<String> = Vec::new();
 
