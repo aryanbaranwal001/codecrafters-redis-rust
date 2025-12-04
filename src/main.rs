@@ -274,10 +274,9 @@ fn handle_connection(
 
                 "lpop" => {
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+                        let first_element = inner.vec.remove(0);
 
-                        let first_element = inner.vec.remove(0);                    
-
-                        let data_to_send = format!("*1\r\n${}\r\n{}\r\n", first_element.len(), first_element);
+                        let data_to_send = format!("${}\r\n{}\r\n", first_element.len(), first_element);
 
                         let _ = stream.write_all(data_to_send.as_bytes());
                     } else {
