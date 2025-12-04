@@ -183,6 +183,53 @@ fn handle_connection(
 
                     println!("logger::main_list => {:?}", main_list);
                 }
+
+                "lrange" => {
+                    if
+                        let Some(inner) = main_list
+                            .iter_mut()
+                            .find(|inner| inner.name == elements_array[1])
+                    {
+                        let starting_index = elements_array[2].parse::<u32>().unwrap();
+                        let mut ending_index = elements_array[3].parse::<u32>().unwrap();
+
+                        let length_of_list = inner.vec.len();
+
+                        // checking if starting_index and ending_index are all valid
+
+                        if starting_index >= (length_of_list as u32) {
+                            let _ = stream.write_all(b"*0\r\n");
+                        } else if starting_index > ending_index {
+                            let _ = stream.write_all(b"*0\r\n");
+                        } else {
+                            if ending_index >= (length_of_list as u32) {
+                                ending_index = (length_of_list as u32) - 1;
+                            }
+
+                            let mut vec_to_send: Vec<String> = Vec::new();
+
+                            for i in starting_index..ending_index + 1 {
+                                vec_to_send.push(inner.vec[i as usize].clone());
+                            }
+
+                            let mut string_to_send = format!("*{}\r\n", vec_to_send.len());
+
+                            let mut tail_string = String::new();
+
+                            for word in vec_to_send {
+                                let tail_part = format!("${}\r\n{}\r\n", word.len(), word);
+                                tail_string.push_str(&tail_part);
+                            }
+
+                            string_to_send.push_str(&tail_string);
+
+                            let _ = stream.write_all(string_to_send.as_bytes());
+                        }
+                    } else {
+                        // list doesn't exists
+                        let _ = stream.write_all(b"*0\r\n");
+                    }
+                }
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
