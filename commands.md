@@ -15,7 +15,8 @@
 
 
 
-`echo -e '*3\r\n$5\r\nRPUSH\r\n$5\r\ngrape\r\n$9\r\nraspberry' | nc localhost 6379`
+`echo -e '*3\r\n$5\r\nRPUSH\r\n$9\r\npineapple\r\n$5\r\nmango' | nc localhost 6379`
+`echo -e '*3\r\n$5\r\nRPUSH\r\n$9\r\npineapple\r\n$4\r\npear' | nc localhost 6379`
 
 
 `codecrafters test `

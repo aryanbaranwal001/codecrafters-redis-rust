@@ -17,11 +17,10 @@ impl List {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            vec: Vec::new()
+            vec: Vec::new(),
         }
     }
 }
 
 pub type SharedStore = Arc<Mutex<HashMap<String, ValueEntry>>>;
-
-
+pub type SharedMainList = Arc<Mutex<Vec<List>>>;

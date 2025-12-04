@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::{ Arc, Mutex };
 
-use tracing_subscriber::fmt::format;
-
 mod types;
 mod helper;
 
 fn main() {
     let store: types::SharedStore = Arc::new(Mutex::new(HashMap::new()));
+
+    let main_list: types::SharedMainList = Arc::new(Mutex::new(Vec::new()));
 
     println!("------------------------------------------------");
 
@@ -20,6 +20,7 @@ fn main() {
     for connection in listener.incoming() {
         // cloning store for each thread
         let store_clone = store.clone();
+        let main_list_clone = main_list.clone();
 
         let _ = thread::spawn(move || {
             match connection {
@@ -41,7 +42,12 @@ fn main() {
 
                                 println!("logger::received string ==> {:?}", received);
 
-                                stream = handle_connection(&buffer, stream, &store_clone);
+                                stream = handle_connection(
+                                    &buffer,
+                                    stream,
+                                    &store_clone,
+                                    &main_list_clone
+                                );
                             }
                             Err(e) => {
                                 println!("error reading stream: {e}");
@@ -60,11 +66,13 @@ fn main() {
 fn handle_connection(
     bytes_received: &[u8],
     mut stream: TcpStream,
-    store: &types::SharedStore
+    store: &types::SharedStore,
+    main_list_store: &types::SharedMainList
 ) -> TcpStream {
     let mut counter = 0;
 
     let mut map = store.lock().unwrap();
+    let mut main_list = main_list_store.lock().unwrap();
 
     match bytes_received[counter] {
         b'*' => {
@@ -74,10 +82,6 @@ fn handle_connection(
             // println!("logger::no of elements in resp array ==> {}", no_of_elements);
 
             let elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
-
-            // for rpush
-            // A list which contains all other lists
-            let mut main_list: Vec<types::List> = Vec::new();
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
@@ -157,6 +161,8 @@ fn handle_connection(
                             .find(|inner| inner.name == elements_array[1])
                     {
                         inner.vec.push(elements_array[2].clone());
+
+                        println!("no of elements in list {}", inner.vec.len());
 
                         let data_to_send = format!(":{}\r\n", inner.vec.len());
 
