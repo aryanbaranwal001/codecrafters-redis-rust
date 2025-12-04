@@ -274,11 +274,29 @@ fn handle_connection(
 
                 "lpop" => {
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-                        let first_element = inner.vec.remove(0);
+                        if let Some(_) = elements_array.get(2) {
+                            let mut no_of_elements_to_remove = elements_array[2].parse::<usize>().unwrap();
 
-                        let data_to_send = format!("${}\r\n{}\r\n", first_element.len(), first_element);
+                            if no_of_elements_to_remove > inner.vec.len() {
+                                no_of_elements_to_remove = inner.vec.len();
+                            }
 
-                        let _ = stream.write_all(data_to_send.as_bytes());
+                            let mut data_to_send: String = String::new();
+                            data_to_send.push_str(&format!("*{}\r\n", no_of_elements_to_remove));
+
+                            for _ in 0..no_of_elements_to_remove {
+                                let first_element = inner.vec.remove(0);
+                                data_to_send.push_str(&format!("${}\r\n{}\r\n", first_element.len(), first_element));
+                            }
+
+                            let _ = stream.write_all(data_to_send.as_bytes());
+                        } else {
+                            let first_element = inner.vec.remove(0);
+
+                            let data_to_send = format!("${}\r\n{}\r\n", first_element.len(), first_element);
+
+                            let _ = stream.write_all(data_to_send.as_bytes());
+                        }
                     } else {
                         let _ = stream.write_all(b"$-1\r\n");
                     }
