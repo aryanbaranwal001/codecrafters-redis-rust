@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::io::{ Read, Write };
+use std::net::{ TcpListener, TcpStream };
+use std::sync::{ Arc, Mutex };
 use std::thread;
 use std::time::Instant;
 
@@ -22,34 +22,42 @@ fn main() {
         let store_clone = store.clone();
         let main_list_clone = main_list.clone();
 
-        let _ = thread::spawn(move || match connection {
-            Ok(mut stream) => {
-                println!("accepted new connection");
+        let _ = thread::spawn(move || {
+            match connection {
+                Ok(mut stream) => {
+                    println!("accepted new connection");
 
-                let mut buffer = [0; 512];
+                    let mut buffer = [0; 512];
 
-                loop {
-                    match stream.read(&mut buffer) {
-                        Ok(0) => {
-                            println!("client disconnected");
-                            return;
-                        }
-                        Ok(n) => {
-                            let received = String::from_utf8_lossy(&buffer[..n]).trim().to_owned();
+                    loop {
+                        match stream.read(&mut buffer) {
+                            Ok(0) => {
+                                println!("client disconnected");
+                                return;
+                            }
+                            Ok(n) => {
+                                let received = String::from_utf8_lossy(&buffer[..n])
+                                    .trim()
+                                    .to_owned();
 
-                            println!("logger::received string ==> {:?}", received);
+                                println!("logger::received string ==> {:?}", received);
 
-                            stream =
-                                handle_connection(&buffer, stream, &store_clone, &main_list_clone);
-                        }
-                        Err(e) => {
-                            println!("error reading stream: {e}");
+                                stream = handle_connection(
+                                    &buffer,
+                                    stream,
+                                    &store_clone,
+                                    &main_list_clone
+                                );
+                            }
+                            Err(e) => {
+                                println!("error reading stream: {e}");
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                println!("error: {}", e);
+                Err(e) => {
+                    println!("error: {}", e);
+                }
             }
         });
     }
@@ -59,7 +67,7 @@ fn handle_connection(
     bytes_received: &[u8],
     mut stream: TcpStream,
     store: &types::SharedStore,
-    main_list_store: &types::SharedMainList,
+    main_list_store: &types::SharedMainList
 ) -> TcpStream {
     let mut counter = 0;
 
@@ -94,8 +102,10 @@ fn handle_connection(
                     let mut expires_at = None;
 
                     if let Some(time_setter_args) = elements_array.get(3) {
-                        expires_at =
-                            helper::handle_expiry(time_setter_args, elements_array.clone());
+                        expires_at = helper::handle_expiry(
+                            time_setter_args,
+                            elements_array.clone()
+                        );
                     }
 
                     let value_entry = types::ValueEntry {
@@ -130,8 +140,11 @@ fn handle_connection(
                                 }
                             }
                             None => {
-                                let value_to_send =
-                                    format!("${}\r\n{}\r\n", val.value.as_bytes().len(), val.value);
+                                let value_to_send = format!(
+                                    "${}\r\n{}\r\n",
+                                    val.value.as_bytes().len(),
+                                    val.value
+                                );
                                 println!("value to send {:?}", value_to_send);
                                 let _ = stream.write_all(value_to_send.as_bytes());
                             }
@@ -142,9 +155,10 @@ fn handle_connection(
                 }
 
                 "rpush" => {
-                    if let Some(inner) = main_list
-                        .iter_mut()
-                        .find(|inner| inner.name == elements_array[1])
+                    if
+                        let Some(inner) = main_list
+                            .iter_mut()
+                            .find(|inner| inner.name == elements_array[1])
                     {
                         for i in 2..elements_array.len() {
                             inner.vec.push(elements_array[i].clone());
@@ -169,11 +183,41 @@ fn handle_connection(
 
                     println!("logger::main_list => {:?}", main_list);
                 }
+                "lpush" => {
+                    if
+                        let Some(inner) = main_list
+                            .iter_mut()
+                            .find(|inner| inner.name == elements_array[1])
+                    {
+                        for i in 2..elements_array.len() {
+                            inner.vec.insert(0, elements_array[i].clone());
+                        }
+
+                        println!("no of elements in list {}", inner.vec.len());
+
+                        let data_to_send = format!(":{}\r\n", inner.vec.len());
+
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    } else {
+                        let mut new_list = types::List::new(elements_array[1].as_str());
+
+                        for i in 2..elements_array.len() {
+                            new_list.vec.insert(0, elements_array[i].clone());
+                        }
+
+                        let data_to_send = format!(":{}\r\n", new_list.vec.len());
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                        main_list.push(new_list);
+                    }
+
+                    println!("logger::main_list => {:?}", main_list);
+                }
 
                 "lrange" => {
-                    if let Some(inner) = main_list
-                        .iter_mut()
-                        .find(|inner| inner.name == elements_array[1])
+                    if
+                        let Some(inner) = main_list
+                            .iter_mut()
+                            .find(|inner| inner.name == elements_array[1])
                     {
                         let mut starting_index = elements_array[2].parse::<i32>().unwrap();
                         let mut ending_index = elements_array[3].parse::<i32>().unwrap();
@@ -184,15 +228,18 @@ fn handle_connection(
 
                         println!(
                             "starting index {}, ending index  {}, length of list {}",
-                            starting_index, ending_index, length_of_list
+                            starting_index,
+                            ending_index,
+                            length_of_list
                         );
 
                         if starting_index < 0 {
                             if starting_index < -1 * (length_of_list as i32) {
                                 starting_index = 0;
                             } else {
-                                starting_index = (length_of_list as i32)
-                                    + -1 * ((-1 * starting_index) % (length_of_list as i32));
+                                starting_index =
+                                    (length_of_list as i32) +
+                                    -1 * ((-1 * starting_index) % (length_of_list as i32));
                             }
                         }
 
@@ -200,14 +247,16 @@ fn handle_connection(
                             if ending_index < -1 * (length_of_list as i32) {
                                 ending_index = 0;
                             } else {
-                                ending_index = (length_of_list as i32)
-                                    + -1 * ((-1 * ending_index) % (length_of_list as i32));
+                                ending_index =
+                                    (length_of_list as i32) +
+                                    -1 * ((-1 * ending_index) % (length_of_list as i32));
                             }
                         }
 
                         println!(
                             "starting index {}, ending index  {}",
-                            starting_index, ending_index
+                            starting_index,
+                            ending_index
                         );
 
                         if starting_index >= (length_of_list as i32) {
