@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 #[derive(Debug)]
 pub struct ValueEntry {
@@ -23,4 +23,4 @@ impl List {
 }
 
 pub type SharedStore = Arc<Mutex<HashMap<String, ValueEntry>>>;
-pub type SharedMainList = Arc<Mutex<Vec<List>>>;
+pub type SharedMainList = Arc<(Mutex<Vec<List>>, Condvar)>;

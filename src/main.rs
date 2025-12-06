@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
-use std::sync::{ Arc, Mutex };
+use std::sync::{ Arc, Condvar, Mutex };
 use std::thread;
 use std::time::Instant;
 
@@ -11,7 +11,7 @@ mod types;
 fn main() {
     let store: types::SharedStore = Arc::new(Mutex::new(HashMap::new()));
 
-    let main_list: types::SharedMainList = Arc::new(Mutex::new(Vec::new()));
+    let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
     println!("------------------------------------------------");
 
@@ -66,8 +66,7 @@ fn handle_connection(
 ) -> TcpStream {
     let mut counter = 0;
 
-    let mut map = store.lock().unwrap();
-    let mut main_list = main_list_store.lock().unwrap();
+    let (main_list_guard, cvar) = &**main_list_store;
 
     match bytes_received[counter] {
         b'*' => {
@@ -94,6 +93,8 @@ fn handle_connection(
                 }
 
                 "set" => {
+                    let mut map = store.lock().unwrap();
+
                     let mut expires_at = None;
 
                     if let Some(time_setter_args) = elements_array.get(3) {
@@ -113,6 +114,8 @@ fn handle_connection(
                 }
 
                 "get" => {
+                    let mut map = store.lock().unwrap();
+
                     if let Some(val) = map.get(&elements_array[1]) {
                         match val.expires_at {
                             Some(expire_time) => {
@@ -139,6 +142,10 @@ fn handle_connection(
                 }
 
                 "rpush" => {
+                    println!("rpush getting triggered");
+
+                    let mut main_list = main_list_guard.lock().unwrap();
+
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         for i in 2..elements_array.len() {
                             inner.vec.push(elements_array[i].clone());
@@ -160,11 +167,14 @@ fn handle_connection(
                         let _ = stream.write_all(data_to_send.as_bytes());
                         main_list.push(new_list);
                     }
+                    cvar.notify_one();
 
                     println!("logger::main_list => {:?}", main_list);
                 }
 
                 "lpush" => {
+                    let mut main_list = main_list_guard.lock().unwrap();
+
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         for i in 2..elements_array.len() {
                             inner.vec.insert(0, elements_array[i].clone());
@@ -191,6 +201,8 @@ fn handle_connection(
                 }
 
                 "lrange" => {
+                    let mut main_list = main_list_guard.lock().unwrap();
+
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         let mut starting_index = elements_array[2].parse::<i32>().unwrap();
                         let mut ending_index = elements_array[3].parse::<i32>().unwrap();
@@ -263,6 +275,8 @@ fn handle_connection(
                 }
 
                 "llen" => {
+                    let mut main_list = main_list_guard.lock().unwrap();
+
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         let data_to_send = format!(":{}\r\n", inner.vec.len());
 
@@ -273,6 +287,8 @@ fn handle_connection(
                 }
 
                 "lpop" => {
+                    let mut main_list = main_list_guard.lock().unwrap();
+
                     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
                         if let Some(_) = elements_array.get(2) {
                             let mut no_of_elements_to_remove = elements_array[2].parse::<usize>().unwrap();
@@ -299,6 +315,40 @@ fn handle_connection(
                         }
                     } else {
                         let _ = stream.write_all(b"$-1\r\n");
+                    }
+                }
+
+                "blpop" => {
+                    let mut main_list = main_list_guard.lock().unwrap();
+
+                    let mut _is_empty: bool = false;
+                    loop {
+                        if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+                            if inner.vec.is_empty() {
+                                _is_empty = true;
+                            } else {
+                                let first_element = inner.vec.remove(0);
+
+                                let data_to_send = format!(
+                                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                                    inner.name.len(),
+                                    inner.name,
+                                    first_element.len(),
+                                    first_element
+                                );
+
+                                let _ = stream.write_all(data_to_send.as_bytes());
+                                break;
+                            }
+                        } else {
+                            _is_empty = true;
+                        }
+
+                        if _is_empty {
+                            println!("waiting for vec to get filled");
+                            main_list = cvar.wait(main_list).unwrap();
+                            _is_empty = false;
+                        }
                     }
                 }
                 _ => {

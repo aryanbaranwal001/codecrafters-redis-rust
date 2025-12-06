@@ -16,7 +16,21 @@
 
 
 `echo -e '*3\r\n$5\r\nRPUSH\r\n$9\r\npineapple\r\n$5\r\nmango' | nc localhost 6379`
+
+
 `echo -e '*3\r\n$5\r\nRPUSH\r\n$9\r\npineapple\r\n$4\r\npear' | nc localhost 6379`
 
+
+
+
+### State to test blpop
+`echo -e '*3\r\n$5\r\nRPUSH\r\n$9\r\npineapple\r\n$4\r\npear' | nc localhost 6379`
+`echo -e '*4\r\n$6\r\nlrange\r\n$9\r\npineapple\r\n$1\r\n0\r\n$1\r\n0\r\n' | nc localhost 6379`
+`echo -e '*2\r\n$4\r\nLPOP\r\n$9\r\npineapple\r\n' | nc localhost 6379`
+`echo -e '*4\r\n$6\r\nlrange\r\n$9\r\npineapple\r\n$1\r\n0\r\n$1\r\n0\r\n' | nc localhost 6379`
+
+### ------------ end
+
+`echo -e '*2\r\n$5\r\nBLPOP\r\n$9\r\npineapple\r\n' | nc localhost 6379`
 
 `codecrafters test `
