@@ -3,7 +3,7 @@ use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
 use std::thread;
-use std::time::Instant;
+use std::time::{ Instant, Duration };
 
 mod helper;
 mod types;
@@ -321,6 +321,15 @@ fn handle_connection(
                 "blpop" => {
                     let mut main_list = main_list_guard.lock().unwrap();
 
+                    let mut timeout = Duration::from_millis(
+                        (&elements_array[2].parse::<f32>().unwrap() * (1000 as f32)) as u64
+                    );
+
+                    // blocking for infinite time
+                    if (0 as f32) == elements_array[2].parse::<f32>().unwrap() {
+                        timeout = Duration::from_secs(u64::MAX);
+                    }
+
                     let mut _is_empty: bool = false;
                     loop {
                         if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
@@ -346,7 +355,15 @@ fn handle_connection(
 
                         if _is_empty {
                             println!("waiting for vec to get filled");
-                            main_list = cvar.wait(main_list).unwrap();
+
+                            let (mainlist_res, timeout_res) = cvar.wait_timeout(main_list, timeout).unwrap();
+
+                            main_list = mainlist_res;
+
+                            if timeout_res.timed_out() {
+                                let _ = stream.write_all(b"*-1\r\n");
+                                break;
+                            }
                             _is_empty = false;
                         }
                     }
