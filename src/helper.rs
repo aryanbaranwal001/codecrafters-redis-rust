@@ -1,5 +1,54 @@
 use std::{ collections::HashMap, time::Instant };
 
+use crate::types;
+
+pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, types::ValueEntry>) -> (bool, bool) {
+    let id = elements_array[2].clone();
+
+    let mut is_incoming_id_invalid: bool = false;
+    let is_special_invalid_case_true: bool = false;
+
+    // checking for 0-0
+    let incoming_id_parts: Vec<&str> = id.split("-").collect();
+
+    if incoming_id_parts[0].parse::<u32>().unwrap() == 0 && incoming_id_parts[1].parse::<u32>().unwrap() == 0 {
+        return (false, true);
+    }
+
+    // if stream exists
+    if let Some(value_entry) = map.get(&elements_array[1]) {
+        match &value_entry.value {
+            types::StoredValue::Stream(entry_vector) => {
+                let last_entry_id = &entry_vector.last().unwrap().id;
+                let last_id_parts: Vec<&str> = last_entry_id.split("-").collect();
+                let incoming_id_parts: Vec<&str> = id.split("-").collect();
+
+                if incoming_id_parts[0].parse::<u32>().unwrap() > last_id_parts[0].parse::<u32>().unwrap() {
+                    is_incoming_id_invalid = false;
+                } else if incoming_id_parts[0].parse::<u32>().unwrap() == last_id_parts[0].parse::<u32>().unwrap() {
+                    if incoming_id_parts[1].parse::<u32>().unwrap() > last_id_parts[1].parse::<u32>().unwrap() {
+                        is_incoming_id_invalid = false;
+                    } else {
+                        println!(
+                            "incomign id second {}, last id second {}",
+                            incoming_id_parts[1].parse::<u32>().unwrap(),
+                            last_id_parts[1].parse::<u32>().unwrap()
+                        );
+                        is_incoming_id_invalid = true;
+                    }
+                } else {
+                    is_incoming_id_invalid = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    println!("is incoming id valid {}, is special case true {}", is_incoming_id_invalid, is_special_invalid_case_true);
+
+    (is_incoming_id_invalid, is_special_invalid_case_true)
+}
+
 pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>, String) {
     let id = elements_array[2].clone();
 

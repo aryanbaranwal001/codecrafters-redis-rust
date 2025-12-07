@@ -239,12 +239,23 @@ pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_li
 pub fn handle_xadd(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
     let mut map = store.lock().unwrap();
 
-    let data_to_send;
+    let (is_incoming_entry_invalid, is_special_invalid_case_true) = helper::validate_entry_id(&elements_array, &map);
 
+    if is_special_invalid_case_true {
+        let data_to_send = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+        let _ = stream.write_all(data_to_send.as_bytes());
+        return;
+    }
+
+    if is_incoming_entry_invalid {
+        let data_to_send = "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+        let _ = stream.write_all(data_to_send.as_bytes());
+        return;
+    }
+
+    // if stream exists
     if let Some(value_entry) = map.get_mut(&elements_array[1]) {
-        let (id, map_to_enter, data_to_send_from_helper) = helper::get_stream_related_data(&elements_array);
-
-        data_to_send = data_to_send_from_helper;
+        let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
 
         match &mut value_entry.value {
             types::StoredValue::Stream(entry_vector) => {
@@ -255,10 +266,9 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: Vec<String>, store: &
             }
             _ => {}
         }
+        let _ = stream.write_all(data_to_send.as_bytes());
     } else {
-        let (id, map_to_enter, data_to_send_from_helper) = helper::get_stream_related_data(&elements_array);
-
-        data_to_send = data_to_send_from_helper;
+        let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
 
         let mut vec_to_move: Vec<types::Entry> = Vec::new();
 
@@ -272,9 +282,8 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: Vec<String>, store: &
             value: types::StoredValue::Stream(vec_to_move),
             expires_at: None,
         });
+        let _ = stream.write_all(data_to_send.as_bytes());
     }
-
-    let _ = stream.write_all(data_to_send.as_bytes());
 }
 
 // following functions use hashmap (map)
