@@ -236,6 +236,47 @@ pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_li
     println!("logger::main_list => {:?}", main_list);
 }
 
+pub fn handle_xadd(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let mut map = store.lock().unwrap();
+
+    let data_to_send;
+
+    if let Some(value_entry) = map.get_mut(&elements_array[1]) {
+        let (id, map_to_enter, data_to_send_from_helper) = helper::get_stream_related_data(&elements_array);
+
+        data_to_send = data_to_send_from_helper;
+
+        match &mut value_entry.value {
+            types::StoredValue::Stream(entry_vector) => {
+                entry_vector.push(types::Entry {
+                    id,
+                    map: map_to_enter,
+                });
+            }
+            _ => {}
+        }
+    } else {
+        let (id, map_to_enter, data_to_send_from_helper) = helper::get_stream_related_data(&elements_array);
+
+        data_to_send = data_to_send_from_helper;
+
+        let mut vec_to_move: Vec<types::Entry> = Vec::new();
+
+        vec_to_move.push(types::Entry {
+            id,
+            map: map_to_enter,
+        });
+
+        // creates a new stream
+        map.insert(elements_array[1].to_string(), types::ValueEntry {
+            value: types::StoredValue::Stream(vec_to_move),
+            expires_at: None,
+        });
+    }
+
+    let _ = stream.write_all(data_to_send.as_bytes());
+}
+
 // following functions use hashmap (map)
 
 pub fn handle_echo(stream: &mut TcpStream, elements_array: Vec<String>) {
@@ -304,10 +345,9 @@ pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &
             types::StoredValue::String(_) => {
                 let _ = stream.write_all(b"+string\r\n");
             }
-            
+
             types::StoredValue::Stream(_) => {
                 let _ = stream.write_all(b"+stream\r\n");
-                
             }
 
             // _ => {}
