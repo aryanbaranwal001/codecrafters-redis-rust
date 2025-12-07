@@ -1,4 +1,20 @@
-use std::time::Instant;
+use std::{ collections::HashMap, time::Instant };
+
+pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>, String) {
+    let id = elements_array[2].clone();
+
+    let mut map_to_enter: HashMap<String, String> = HashMap::new();
+
+    let no_of_key_value_pairs = (elements_array.len() - 3) / 2;
+
+    for i in 0..no_of_key_value_pairs {
+        map_to_enter.insert(elements_array[i + 2].clone(), elements_array[i + 3].clone());
+    }
+
+    let data_to_send = format!("${}\r\n{}\r\n", id.len(), id);
+
+    (id, map_to_enter, data_to_send)
+}
 
 // handle expiry
 pub fn handle_expiry(time_setter_args: &str, elements_array: Vec<String>) -> Option<Instant> {
@@ -35,10 +51,7 @@ pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize)
             }
             counter += 2;
 
-            let number_required = String::from_utf8(num_in_bytes)
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
+            let number_required = String::from_utf8(num_in_bytes).unwrap().parse::<usize>().unwrap();
 
             (number_required, counter)
         }
@@ -50,11 +63,7 @@ pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize)
 }
 
 // get the elements in Vec<String> from resp
-pub fn parsing_elements(
-    bytes_received: &[u8],
-    mut counter: usize,
-    no_of_elements: usize,
-) -> Vec<String> {
+pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_elements: usize) -> Vec<String> {
     let mut elements_array: Vec<String> = Vec::new();
 
     for _ in 0..no_of_elements as u32 {

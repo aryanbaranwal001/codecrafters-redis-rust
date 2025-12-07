@@ -1,9 +1,23 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{ Arc, Condvar, Mutex };
+
+// #[derive(Clone)]
+#[derive(Debug)]
+pub enum StoredValue {
+    String(String),
+    Stream(Vec<Entry>),
+}
+
+
+#[derive(Debug)] 
+pub struct Entry {
+    pub id: String,
+    pub map: HashMap<String, String>,
+}
 
 #[derive(Debug)]
 pub struct ValueEntry {
-    pub value: String,
+    pub value: StoredValue,
     pub expires_at: Option<std::time::Instant>, // None = no expiry
 }
 

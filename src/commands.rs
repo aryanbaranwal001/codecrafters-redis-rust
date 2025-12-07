@@ -236,6 +236,8 @@ pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_li
     println!("logger::main_list => {:?}", main_list);
 }
 
+// following functions use hashmap (map)
+
 pub fn handle_echo(stream: &mut TcpStream, elements_array: Vec<String>) {
     println!("elements array ==> {:?}", elements_array);
     let bulk_str_to_send = format!("${}\r\n{}\r\n", elements_array[1].as_bytes().len(), elements_array[1]);
@@ -252,7 +254,7 @@ pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &t
     }
 
     let value_entry = types::ValueEntry {
-        value: elements_array[2].clone(),
+        value: types::StoredValue::String(elements_array[2].clone()),
         expires_at,
     };
 
@@ -261,16 +263,6 @@ pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &t
     println!("logger::map ==> {:?}", map);
 
     let _ = stream.write_all("+OK\r\n".as_bytes());
-}
-
-pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let map = store.lock().unwrap();
-
-    if let Some(_) = map.get(&elements_array[1]) {
-        let _ = stream.write_all(b"+string\r\n");
-    } else {
-        let _ = stream.write_all(b"+none\r\n");
-    }
 }
 
 pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
@@ -282,21 +274,45 @@ pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &t
                 if Instant::now() >= expire_time {
                     map.remove(&elements_array[1]);
                     let _ = stream.write_all("$-1\r\n".as_bytes());
+                    return;
                 } else {
-                    println!("value, word {:?}", val.value);
-
-                    let value_to_send = format!("${}\r\n{}\r\n", val.value.as_bytes().len(), val.value);
-                    println!("value to send {:?}", value_to_send);
-                    let _ = stream.write_all(value_to_send.as_bytes());
                 }
             }
-            None => {
-                let value_to_send = format!("${}\r\n{}\r\n", val.value.as_bytes().len(), val.value);
+            None => {}
+        }
+
+        match &val.value {
+            types::StoredValue::String(string_var) => {
+                println!("value, word {:?}", string_var);
+
+                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
                 println!("value to send {:?}", value_to_send);
                 let _ = stream.write_all(value_to_send.as_bytes());
             }
+            _ => {}
         }
     } else {
         println!("Key Doesn't exists");
+    }
+}
+
+pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let map = store.lock().unwrap();
+
+    if let Some(value_entry) = map.get(&elements_array[1]) {
+        match value_entry.value {
+            types::StoredValue::String(_) => {
+                let _ = stream.write_all(b"+string\r\n");
+            }
+            
+            types::StoredValue::Stream(_) => {
+                let _ = stream.write_all(b"+stream\r\n");
+                
+            }
+
+            // _ => {}
+        }
+    } else {
+        let _ = stream.write_all(b"+none\r\n");
     }
 }

@@ -10,7 +10,6 @@ mod types;
 
 fn main() {
     let store: types::SharedStore = Arc::new(Mutex::new(HashMap::new()));
-
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
     println!("------------------------------------------------");
@@ -118,6 +117,53 @@ fn handle_connection(
 
                 "type" => {
                     commands::handle_type(&mut stream, elements_array, store);
+                }
+
+                "xadd" => {
+                    let mut map = store.lock().unwrap();
+
+                    if let Some(value_entry) = map.get_mut(&elements_array[1]) {
+                        // getting the key value pairs and pushing to Stream vec as entry
+
+                        let id = elements_array[2].clone();
+
+                        let mut map_to_enter: HashMap<String, String> = HashMap::new();
+
+                        let no_of_key_value_pairs = (elements_array.len() - 3) / 2;
+
+                        for i in 0..no_of_key_value_pairs {
+                            map_to_enter.insert(elements_array[i + 2].clone(), elements_array[i + 3].clone());
+                        }
+
+                        let data_to_send = format!("*{}\r\n{}\r\n", id.len(), id);
+
+                        match &mut value_entry.value {
+                            types::StoredValue::Stream(entry_vector) => {
+                                entry_vector.push(types::Entry {
+                                    id,
+                                    map: map_to_enter,
+                                });
+                            }
+                            _ => {}
+                        }
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    } else {
+                        let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
+
+                        let mut vec_to_move: Vec<types::Entry> = Vec::new();
+
+                        vec_to_move.push(types::Entry {
+                            id,
+                            map: map_to_enter,
+                        });
+
+                        // creates a new stream
+                        map.insert(elements_array[1].to_string(), types::ValueEntry {
+                            value: types::StoredValue::Stream(vec_to_move),
+                            expires_at: None,
+                        });
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    }
                 }
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
