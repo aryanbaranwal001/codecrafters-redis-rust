@@ -1,6 +1,6 @@
 use std::net::TcpStream;
 use std::io::Write;
-use std::time::{ Duration, Instant };
+use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 
 use crate::types;
 use crate::helper;
@@ -241,15 +241,13 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
 
     let incoming_id = elements_array[2].clone();
 
-    let mut s = incoming_id.splitn(2, '-');
-    let (incoming_id_one_str, incoming_id_two_str) = (s.next().unwrap(), s.next().unwrap());
+    let incoming_id_first_part: u128;
+    let mut incoming_id_second_part: u128 = 0;
 
-    let mut incoming_id_second_part: u32 = 0;
+    // generate the whole sequence
+    if incoming_id == "*" {
+        incoming_id_first_part = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
 
-    // when ids are generated
-    // no need to validate entry in this part and WE will be generating them
-    // generating the sequence number
-    if incoming_id_two_str == "*" {
         // if some entry exists before incoming entry
         if let Some(value_entry) = map.get(&elements_array[1]) {
             // from hashmap get the value_entry from which .value will give storedvalue enum
@@ -258,13 +256,56 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                 types::StoredValue::Stream(entry_vector) => {
                     let s = &mut entry_vector.last().unwrap().id.splitn(2, "-");
                     let (last_id_one, last_id_two) = (
-                        s.next().unwrap().parse::<u32>().unwrap(),
-                        s.next().unwrap().parse::<u32>().unwrap(),
+                        s.next().unwrap().parse::<u128>().unwrap(),
+                        s.next().unwrap().parse::<u128>().unwrap(),
                     );
 
-                    if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
+                    if incoming_id_first_part > last_id_one {
+                        incoming_id_second_part = 0;
+                    } else if incoming_id_first_part == last_id_one {
                         incoming_id_second_part = last_id_two + 1;
-                    } else if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
+
+                        // should never trigger
+                        // incoming_id_first_part < last_id_one
+                    } else {
+                        // id is not valid
+                        let data_to_send =
+                            "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                        return;
+                    }
+                }
+                _ => {}
+            }
+
+            // if no entry exist
+        } else {
+            incoming_id_second_part = 0;
+        }
+
+        elements_array[2] = format!("{}-{}", incoming_id_first_part, incoming_id_second_part);
+
+
+        // generate only the sequence number
+    } else if incoming_id.splitn(2, '-').nth(1).unwrap() == "*" {
+        let mut s = incoming_id.splitn(2, '-');
+        let (incoming_id_one_str, _) = (s.next().unwrap(), s.next().unwrap());
+
+        // if some entry exists before incoming entry
+        if let Some(value_entry) = map.get(&elements_array[1]) {
+            // from hashmap get the value_entry from which .value will give storedvalue enum
+            // which you match against Stream enum
+            match &value_entry.value {
+                types::StoredValue::Stream(entry_vector) => {
+                    let s = &mut entry_vector.last().unwrap().id.splitn(2, "-");
+                    let (last_id_one, last_id_two) = (
+                        s.next().unwrap().parse::<u128>().unwrap(),
+                        s.next().unwrap().parse::<u128>().unwrap(),
+                    );
+
+                    if incoming_id_one_str.parse::<u128>().unwrap() == last_id_one {
+                        incoming_id_second_part = last_id_two + 1;
+                    } else if incoming_id_one_str.parse::<u128>().unwrap() > last_id_one {
                         incoming_id_second_part = 0;
                     } else {
                         // id is not valid
@@ -276,6 +317,7 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                 }
                 _ => {}
             }
+
             // if no entry exist
         } else {
             // checking for 0-0
@@ -288,9 +330,9 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
 
         // mutating elements array to replace old incomplete id with generated id
         elements_array[2] = format!("{}-{}", incoming_id_one_str, incoming_id_second_part);
-    } else {
-        // when entry ids are not generated, must be validated
 
+        // if ids are not generated, then must be validated
+    } else {
         let is_entry_id_invalid = helper::validate_entry_id(&elements_array, &map, stream);
         if is_entry_id_invalid {
             return;
