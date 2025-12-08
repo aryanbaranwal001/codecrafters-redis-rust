@@ -374,7 +374,7 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
 pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
     let map = store.lock().unwrap();
 
-    // will get these in u32
+    // will get these in u128
     let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) = helper::get_start_and_end_indexes(
         &elements_array
     );

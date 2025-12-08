@@ -65,6 +65,7 @@ pub fn validate_entry_id(
     }
 }
 
+// get stream related data
 pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>, String) {
     let id = elements_array[2].clone();
 
@@ -157,6 +158,7 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
     elements_array
 }
 
+// get starting and ending indexes
 pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
     let star_id = elements_array[2].clone();
     let end_id = elements_array[3].clone();
@@ -194,6 +196,32 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
         end_id_time = end_id.parse::<u128>().unwrap();
         end_id_seq = u128::MAX;
     }
+
+    (start_id_time, start_id_seq, end_id_time, end_id_seq)
+}
+
+pub fn get_start_and_end_indexes_for_xread(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
+    let star_id = elements_array[3].clone();
+
+    let start_id_time;
+    let start_id_seq;
+
+    let end_id_time;
+    let end_id_seq;
+
+    if star_id.contains("-") {
+        let mut s = star_id.splitn(2, "-");
+        (start_id_time, start_id_seq) = (
+            s.next().unwrap().parse::<u128>().unwrap(),
+            s.next().unwrap().parse::<u128>().unwrap(),
+        );
+    } else {
+        start_id_time = star_id.parse::<u128>().unwrap();
+        start_id_seq = 0;
+    }
+
+    end_id_time = u128::MAX;
+    end_id_seq = u128::MAX;
 
     (start_id_time, start_id_seq, end_id_time, end_id_seq)
 }
