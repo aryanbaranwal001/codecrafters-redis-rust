@@ -181,7 +181,10 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
         start_id_seq = 0;
     }
 
-    if end_id.contains("-") {
+    if end_id == "+" {
+        end_id_time = u128::MAX;
+        end_id_seq = u128::MAX;
+    } else if end_id.contains("-") {
         let mut s = end_id.splitn(2, "-");
         (end_id_time, end_id_seq) = (
             s.next().unwrap().parse::<u128>().unwrap(),
