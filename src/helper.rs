@@ -167,7 +167,10 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
     let end_id_time;
     let end_id_seq;
 
-    if star_id.contains("-") {
+    if star_id == "-" {
+        start_id_time = 0;
+        start_id_seq = 1;
+    } else if star_id.contains("-") {
         let mut s = star_id.splitn(2, "-");
         (start_id_time, start_id_seq) = (
             s.next().unwrap().parse::<u128>().unwrap(),
