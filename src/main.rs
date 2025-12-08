@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
-use std::thread;
+use std::{ thread };
 
 mod commands;
 mod helper;
@@ -34,13 +34,7 @@ fn main() {
                                 println!("client disconnected");
                                 return;
                             }
-                            Ok(n) => {
-                                let received = String::from_utf8_lossy(&buffer[..n])
-                                    .trim()
-                                    .to_owned();
-
-                                println!("logger::received string ==> {:?}", received);
-
+                            Ok(_n) => {
                                 stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone);
                             }
                             Err(e) => {
@@ -122,6 +116,11 @@ fn handle_connection(
                 "xadd" => {
                     commands::handle_xadd(&mut stream, &mut elements_array, store);
                 }
+
+                "xrange" => {
+                    commands::handle_xrange(&mut stream, &mut elements_array, store);
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }

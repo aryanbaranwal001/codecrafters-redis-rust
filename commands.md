@@ -31,6 +31,6 @@
 
 ### ------------ end
 
-`echo -e '*5\r\n$4\r\nXADD\r\n$9\r\nblueberry\r\n$3\r\n0-*\r\n$5\r\ngrape\r\n$6\r\norange' | nc localhost 6379`
+`echo -e '0' | nc localhost 6379`
 
 `codecrafters test `

@@ -285,7 +285,6 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
 
         elements_array[2] = format!("{}-{}", incoming_id_first_part, incoming_id_second_part);
 
-
         // generate only the sequence number
     } else if incoming_id.splitn(2, '-').nth(1).unwrap() == "*" {
         let mut s = incoming_id.splitn(2, '-');
@@ -369,6 +368,66 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
             expires_at: None,
         });
         let _ = stream.write_all(data_to_send.as_bytes());
+    }
+}
+
+pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+    let map = store.lock().unwrap();
+
+    // will get these in u32
+    let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) = helper::get_start_and_end_indexes(
+        &elements_array
+    );
+
+    // getting the full entries array
+    // stream exists
+    if let Some(value_entry) = map.get(&elements_array[1]) {
+        match &value_entry.value {
+            types::StoredValue::Stream(entry_vector) => {
+                let filtered_data: Vec<&types::Entry> = entry_vector
+                    .iter()
+                    .filter(|e| {
+                        let mut s = e.id.splitn(2, "-");
+                        let (iteration_id_time, iteration_id_seq) = (
+                            s.next().unwrap().parse::<u128>().unwrap(),
+                            s.next().unwrap().parse::<u128>().unwrap(),
+                        );
+                        iteration_id_time <= end_id_time &&
+                            iteration_id_time >= start_id_time &&
+                            iteration_id_seq >= start_id_sequence &&
+                            iteration_id_seq <= end_id_sequence
+                    })
+                    .collect();
+
+                let mut array_of_array_data = format!("*{}\r\n", filtered_data.len());
+
+                for entry in filtered_data {
+                    let entry_id = &entry.id;
+                    let hashmap = &entry.map;
+
+                    let mut entry_array = format!("*2\r\n");
+                    let mut hashmap_array = format!("*{}\r\n", hashmap.len() * 2);
+
+                    for (key, value) in hashmap {
+                        let map_bulk_data = format!("${}\r\n{}\r\n${}\r\n{}\r\n", key.len(), key, value.len(), value);
+                        println!("key value {}, {}", key, value);
+                        hashmap_array.push_str(&map_bulk_data);
+                    }
+
+                    entry_array.push_str(&format!("${}\r\n{}\r\n", entry_id.len(), entry_id));
+                    entry_array.push_str(&hashmap_array);
+
+                    array_of_array_data.push_str(&entry_array);
+                }
+
+                let _ = stream.write(array_of_array_data.as_bytes());
+            }
+            _ => {}
+        }
+
+        // stream doesn't exists
+    } else {
+        let _ = stream.write_all(b"stream with given stream key doesn't exists");
     }
 }
 

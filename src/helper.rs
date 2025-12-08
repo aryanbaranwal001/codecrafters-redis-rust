@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::u32;
 use std::{ collections::HashMap, time::Instant };
 use std::net::TcpStream;
 
@@ -72,7 +73,7 @@ pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap
     let no_of_key_value_pairs = (elements_array.len() - 3) / 2;
 
     for i in 0..no_of_key_value_pairs {
-        map_to_enter.insert(elements_array[i + 2].clone(), elements_array[i + 3].clone());
+        map_to_enter.insert(elements_array[i + 3].clone(), elements_array[i + 4].clone());
     }
 
     let data_to_send = format!("${}\r\n{}\r\n", id.len(), id);
@@ -154,4 +155,39 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
     println!("logger::elements array  ==> {:?}", elements_array);
 
     elements_array
+}
+
+pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
+    let star_id = elements_array[2].clone();
+    let end_id = elements_array[3].clone();
+
+    let start_id_time;
+    let start_id_seq;
+
+    let end_id_time;
+    let end_id_seq;
+
+    if star_id.contains("-") {
+        let mut s = star_id.splitn(2, "-");
+        (start_id_time, start_id_seq) = (
+            s.next().unwrap().parse::<u128>().unwrap(),
+            s.next().unwrap().parse::<u128>().unwrap(),
+        );
+    } else {
+        start_id_time = star_id.parse::<u128>().unwrap();
+        start_id_seq = 0;
+    }
+
+    if end_id.contains("-") {
+        let mut s = end_id.splitn(2, "-");
+        (end_id_time, end_id_seq) = (
+            s.next().unwrap().parse::<u128>().unwrap(),
+            s.next().unwrap().parse::<u128>().unwrap(),
+        );
+    } else {
+        end_id_time = end_id.parse::<u128>().unwrap();
+        end_id_seq = u128::MAX;
+    }
+
+    (start_id_time, start_id_seq, end_id_time, end_id_seq)
 }
