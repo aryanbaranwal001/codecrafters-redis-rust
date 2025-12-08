@@ -200,8 +200,7 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
     (start_id_time, start_id_seq, end_id_time, end_id_seq)
 }
 
-pub fn get_start_and_end_indexes_for_xread(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
-    let star_id = elements_array[3].clone();
+pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u128, u128) {
 
     let start_id_time;
     let start_id_seq;
@@ -209,14 +208,14 @@ pub fn get_start_and_end_indexes_for_xread(elements_array: &Vec<String>) -> (u12
     let end_id_time;
     let end_id_seq;
 
-    if star_id.contains("-") {
-        let mut s = star_id.splitn(2, "-");
+    if start_id.contains("-") {
+        let mut s = start_id.splitn(2, "-");
         (start_id_time, start_id_seq) = (
             s.next().unwrap().parse::<u128>().unwrap(),
             s.next().unwrap().parse::<u128>().unwrap(),
         );
     } else {
-        start_id_time = star_id.parse::<u128>().unwrap();
+        start_id_time = start_id.parse::<u128>().unwrap();
         start_id_seq = 0;
     }
 
