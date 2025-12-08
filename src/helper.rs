@@ -1,18 +1,25 @@
+use std::io::Write;
 use std::{ collections::HashMap, time::Instant };
+use std::net::TcpStream;
 
 use crate::types;
 
-pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, types::ValueEntry>) -> (bool, bool) {
+// bool getting returned is "is_entry_id_invalid"
+pub fn validate_entry_id(
+    elements_array: &Vec<String>,
+    map: &HashMap<String, types::ValueEntry>,
+    stream: &mut TcpStream
+) -> bool {
     let id = elements_array[2].clone();
 
-    let mut is_incoming_id_invalid: bool = false;
-    let is_special_invalid_case_true: bool = false;
+    let s = &mut id.splitn(2, "-");
+    let (incoming_id_one_str, incoming_id_two_str) = (s.next().unwrap(), s.next().unwrap());
 
-    // checking for 0-0
-    let incoming_id_parts: Vec<&str> = id.split("-").collect();
-
-    if incoming_id_parts[0].parse::<u32>().unwrap() == 0 && incoming_id_parts[1].parse::<u32>().unwrap() == 0 {
-        return (false, true);
+    // checks for 0-0
+    if incoming_id_one_str.parse::<u32>().unwrap() == 0 && incoming_id_two_str.parse::<u32>().unwrap() == 0 {
+        let data_to_send = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+        let _ = stream.write_all(data_to_send.as_bytes());
+        return true;
     }
 
     // if stream exists
@@ -20,33 +27,41 @@ pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, typ
         match &value_entry.value {
             types::StoredValue::Stream(entry_vector) => {
                 let last_entry_id = &entry_vector.last().unwrap().id;
-                let last_id_parts: Vec<&str> = last_entry_id.split("-").collect();
-                let incoming_id_parts: Vec<&str> = id.split("-").collect();
+                let s = &mut last_entry_id.splitn(2, "-");
+                let (last_id_one, last_id_two) = (
+                    s.next().unwrap().parse::<u32>().unwrap(),
+                    s.next().unwrap().parse::<u32>().unwrap(),
+                );
 
-                if incoming_id_parts[0].parse::<u32>().unwrap() > last_id_parts[0].parse::<u32>().unwrap() {
-                    is_incoming_id_invalid = false;
-                } else if incoming_id_parts[0].parse::<u32>().unwrap() == last_id_parts[0].parse::<u32>().unwrap() {
-                    if incoming_id_parts[1].parse::<u32>().unwrap() > last_id_parts[1].parse::<u32>().unwrap() {
-                        is_incoming_id_invalid = false;
-                    } else {
-                        println!(
-                            "incomign id second {}, last id second {}",
-                            incoming_id_parts[1].parse::<u32>().unwrap(),
-                            last_id_parts[1].parse::<u32>().unwrap()
-                        );
-                        is_incoming_id_invalid = true;
+                // checking if time part is correct
+
+                if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
+                    return false;
+                } else if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
+                    // checking if sequence number is correct
+                    if incoming_id_two_str.parse::<u32>().unwrap() <= last_id_two {
+                        let data_to_send =
+                            "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                        return true;
                     }
+                    return false;
                 } else {
-                    is_incoming_id_invalid = true;
+                    let data_to_send =
+                        "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+                    let _ = stream.write_all(data_to_send.as_bytes());
+                    return true;
                 }
             }
-            _ => {}
+            _ => {
+                // this will never run
+                return false;
+            }
         }
+    } else {
+        // if stream doesn't exists and we have checked for 0-0 then that entry id is valid
+        return false;
     }
-
-    println!("is incoming id valid {}, is special case true {}", is_incoming_id_invalid, is_special_invalid_case_true);
-
-    (is_incoming_id_invalid, is_special_invalid_case_true)
 }
 
 pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>, String) {

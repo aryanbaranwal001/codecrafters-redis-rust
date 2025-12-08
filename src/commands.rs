@@ -236,24 +236,68 @@ pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_li
     println!("logger::main_list => {:?}", main_list);
 }
 
-pub fn handle_xadd(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
     let mut map = store.lock().unwrap();
 
-    let (is_incoming_entry_invalid, is_special_invalid_case_true) = helper::validate_entry_id(&elements_array, &map);
+    let incoming_id = elements_array[2].clone();
 
-    if is_special_invalid_case_true {
-        let data_to_send = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
-        let _ = stream.write_all(data_to_send.as_bytes());
-        return;
+    let mut s = incoming_id.splitn(2, '-');
+    let (incoming_id_one_str, incoming_id_two_str) = (s.next().unwrap(), s.next().unwrap());
+
+    let mut incoming_id_second_part: u32 = 0;
+
+    // when ids are generated
+    // no need to validate entry in this part and WE will be generating them
+    // generating the sequence number
+    if incoming_id_two_str == "*" {
+        // if some entry exists before incoming entry
+        if let Some(value_entry) = map.get(&elements_array[1]) {
+            // from hashmap get the value_entry from which .value will give storedvalue enum
+            // which you match against Stream enum
+            match &value_entry.value {
+                types::StoredValue::Stream(entry_vector) => {
+                    let s = &mut entry_vector.last().unwrap().id.splitn(2, "-");
+                    let (last_id_one, last_id_two) = (
+                        s.next().unwrap().parse::<u32>().unwrap(),
+                        s.next().unwrap().parse::<u32>().unwrap(),
+                    );
+
+                    if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
+                        incoming_id_second_part = last_id_two + 1;
+                    } else if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
+                        incoming_id_second_part = 0;
+                    } else {
+                        // id is not valid
+                        let data_to_send =
+                            "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            // if no entry exist
+        } else {
+            // checking for 0-0
+            if incoming_id_one_str.parse::<u32>().unwrap() == 0 {
+                incoming_id_second_part = 1;
+            } else {
+                incoming_id_second_part = 0;
+            }
+        }
+
+        // mutating elements array to replace old incomplete id with generated id
+        elements_array[2] = format!("{}-{}", incoming_id_one_str, incoming_id_second_part);
+    } else {
+        // when entry ids are not generated, must be validated
+
+        let is_entry_id_invalid = helper::validate_entry_id(&elements_array, &map, stream);
+        if is_entry_id_invalid {
+            return;
+        }
     }
 
-    if is_incoming_entry_invalid {
-        let data_to_send = "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-        let _ = stream.write_all(data_to_send.as_bytes());
-        return;
-    }
-
-    // if stream exists
+    // if stream exists, pushing the entry to the stream
     if let Some(value_entry) = map.get_mut(&elements_array[1]) {
         let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
 

@@ -72,7 +72,7 @@ fn handle_connection(
 
             // println!("logger::no of elements in resp array ==> {}", no_of_elements);
 
-            let elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
+            let mut elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
@@ -120,7 +120,7 @@ fn handle_connection(
                 }
 
                 "xadd" => {
-                    commands::handle_xadd(&mut stream, elements_array, store);
+                    commands::handle_xadd(&mut stream, &mut elements_array, store);
                 }
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
