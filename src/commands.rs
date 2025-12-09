@@ -1,6 +1,7 @@
 use std::net::TcpStream;
 use std::io::Write;
 use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
+use std::u64;
 
 use crate::types;
 use crate::helper;
@@ -522,7 +523,11 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
         let _ = elements_array.remove(1);
 
         // since above element was removed, following is basically elements_array[2]
-        let block_time = elements_array.remove(1).parse::<u128>().unwrap();
+        let mut block_time = elements_array.remove(1).parse::<u64>().unwrap();
+
+        if block_time == 0 {
+            block_time = u64::MAX;
+        }
 
         // this mutates the elements array starting indexes
         helper::edit_the_new_starting_indexes_for_blocking_xread(&map, elements_array);
@@ -534,7 +539,6 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
     // let mut no_of_valid_streams = 0;
 
     let (final_array_data_of_streams, no_of_valid_streams) = helper::get_streams_array(&map, elements_array);
-
 
     if no_of_valid_streams != 0 {
         let final_array_data_of_streams_head = format!("*{}\r\n", no_of_valid_streams);
