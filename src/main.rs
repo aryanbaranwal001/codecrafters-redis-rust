@@ -125,6 +125,35 @@ fn handle_connection(
                     commands::handle_xread(&mut stream, &mut elements_array, store);
                 }
 
+                "incr" => {
+                    let (s, _) = &**store;
+                    let mut map = s.lock().unwrap();
+                    if let Some(val) = map.get_mut(&elements_array[1]) {
+                        match &mut val.value {
+                            types::StoredValue::String(string_var) => {
+                                println!("value, word {:?}", string_var);
+
+                                match string_var.parse::<u32>() {
+                                    Ok(n) => {
+                                        let updated_num = n + 1;
+
+                                        *string_var = updated_num.to_string();
+
+                                        let data_to_send = format!(":{}\r\n", updated_num);
+                                        let _ = stream.write_all(data_to_send.as_bytes());
+                                    }
+                                    Err(e) => {
+                                        println!("key is not a number {}", e);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        println!("Key Doesn't exists");
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
