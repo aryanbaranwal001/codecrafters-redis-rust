@@ -5,6 +5,12 @@ use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 use crate::types;
 use crate::helper;
 
+pub fn handle_echo(stream: &mut TcpStream, elements_array: Vec<String>) {
+    println!("elements array ==> {:?}", elements_array);
+    let bulk_str_to_send = format!("${}\r\n{}\r\n", elements_array[1].as_bytes().len(), elements_array[1]);
+    let _ = stream.write_all(bulk_str_to_send.as_bytes());
+}
+
 pub fn handle_blpop(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
     let (main_list_guard, cvar) = &**main_list_store;
     let mut main_list = main_list_guard.lock().unwrap();
@@ -237,7 +243,8 @@ pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_li
 }
 
 pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
-    let mut map = store.lock().unwrap();
+    let (s, cvar) = &**store;
+    let mut map = s.lock().unwrap();
 
     let incoming_id = elements_array[2].clone();
 
@@ -369,11 +376,13 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
         });
         let _ = stream.write_all(data_to_send.as_bytes());
     }
+
+    cvar.notify_one();
 }
 
 pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
-    let map = store.lock().unwrap();
-
+    let (s, _) = &**store;
+    let map = s.lock().unwrap();
     // will get these in u128
     let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) = helper::get_start_and_end_indexes(
         &elements_array
@@ -431,8 +440,127 @@ pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, s
     }
 }
 
-pub fn handle_xead(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
-    let map = store.lock().unwrap();
+pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let mut map = s.lock().unwrap();
+    let mut expires_at = None;
+
+    if let Some(time_setter_args) = elements_array.get(3) {
+        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
+    }
+
+    let value_entry = types::ValueEntry {
+        value: types::StoredValue::String(elements_array[2].clone()),
+        expires_at,
+    };
+
+    map.insert(elements_array[1].clone(), value_entry);
+
+    println!("logger::map ==> {:?}", map);
+
+    let _ = stream.write_all("+OK\r\n".as_bytes());
+}
+
+pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let mut map = s.lock().unwrap();
+    if let Some(val) = map.get(&elements_array[1]) {
+        match val.expires_at {
+            Some(expire_time) => {
+                if Instant::now() >= expire_time {
+                    map.remove(&elements_array[1]);
+                    let _ = stream.write_all("$-1\r\n".as_bytes());
+                    return;
+                } else {
+                }
+            }
+            None => {}
+        }
+
+        match &val.value {
+            types::StoredValue::String(string_var) => {
+                println!("value, word {:?}", string_var);
+
+                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
+                println!("value to send {:?}", value_to_send);
+                let _ = stream.write_all(value_to_send.as_bytes());
+            }
+            _ => {}
+        }
+    } else {
+        println!("Key Doesn't exists");
+    }
+}
+
+pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let map = s.lock().unwrap();
+    if let Some(value_entry) = map.get(&elements_array[1]) {
+        match value_entry.value {
+            types::StoredValue::String(_) => {
+                let _ = stream.write_all(b"+string\r\n");
+            }
+
+            types::StoredValue::Stream(_) => {
+                let _ = stream.write_all(b"+stream\r\n");
+            }
+
+            // _ => {}
+        }
+    } else {
+        let _ = stream.write_all(b"+none\r\n");
+    }
+}
+
+pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+    let (s, cvar) = &**store;
+    let mut map = s.lock().unwrap();
+
+    let mut block_time: u128 = 0;
+
+    // mutating the elements array so I don't have to add additional support for already implemented xread code
+    if elements_array[1].to_ascii_lowercase() == "block" {
+        let _ = elements_array.remove(1);
+
+        // since above element was removed, following is basically elements_array[2]
+        block_time = elements_array.remove(1).parse::<u128>().unwrap();
+    }
+
+    // blocking will always happen irrespective of whatever data
+    // blocking if stream is not available or entries in it are not available
+    // stream exists
+    if let Some(value_entry) = map.get(&elements_array[2]) {
+        match &value_entry.value {
+            types::StoredValue::Stream(entry_vector) => {
+                let id = entry_vector.last().unwrap().id.clone();
+                let mut s = id.splitn(2, "-");
+                let mut start_id_new: String = "".to_string();
+                let (last_id_one, mut last_id_two) = (
+                    s.next().unwrap().parse::<u64>().unwrap(),
+                    s.next().unwrap().parse::<u64>().unwrap(),
+                );
+
+                println!("last id {}-{}", last_id_one, last_id_two);
+                
+                last_id_two = last_id_two + 1;
+                start_id_new = format!("{}-{}", last_id_one, last_id_two);
+                println!("last id updated {}-{}", last_id_one, last_id_two);
+                println!("element array {:?}", elements_array);
+                
+                
+                elements_array[3] = start_id_new;
+
+                // block
+                (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time as u64)).unwrap();
+            }
+
+            _ => {}
+        }
+        // stream doesn't exists
+    } else {
+        // block
+        (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time as u64)).unwrap();
+    }
 
     let no_of_streams = (elements_array.len() - 2) / 2;
 
@@ -464,6 +592,10 @@ pub fn handle_xead(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                                 iteration_id_seq <= end_id_sequence
                         })
                         .collect();
+
+                    if filtered_data.len() == 0 {
+                        let _ = stream.write_all(b"*-1\r\n");
+                    }
 
                     // array of array data is all the data for a particular stream
                     let mut array_of_array_data = format!("*{}\r\n", filtered_data.len());
@@ -506,84 +638,4 @@ pub fn handle_xead(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
     }
 
     let _ = stream.write(final_array_data_of_streams.as_bytes());
-}
-
-// following functions use hashmap (map)
-
-pub fn handle_echo(stream: &mut TcpStream, elements_array: Vec<String>) {
-    println!("elements array ==> {:?}", elements_array);
-    let bulk_str_to_send = format!("${}\r\n{}\r\n", elements_array[1].as_bytes().len(), elements_array[1]);
-    let _ = stream.write_all(bulk_str_to_send.as_bytes());
-}
-
-pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let mut map = store.lock().unwrap();
-
-    let mut expires_at = None;
-
-    if let Some(time_setter_args) = elements_array.get(3) {
-        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
-    }
-
-    let value_entry = types::ValueEntry {
-        value: types::StoredValue::String(elements_array[2].clone()),
-        expires_at,
-    };
-
-    map.insert(elements_array[1].clone(), value_entry);
-
-    println!("logger::map ==> {:?}", map);
-
-    let _ = stream.write_all("+OK\r\n".as_bytes());
-}
-
-pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let mut map = store.lock().unwrap();
-
-    if let Some(val) = map.get(&elements_array[1]) {
-        match val.expires_at {
-            Some(expire_time) => {
-                if Instant::now() >= expire_time {
-                    map.remove(&elements_array[1]);
-                    let _ = stream.write_all("$-1\r\n".as_bytes());
-                    return;
-                } else {
-                }
-            }
-            None => {}
-        }
-
-        match &val.value {
-            types::StoredValue::String(string_var) => {
-                println!("value, word {:?}", string_var);
-
-                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
-                println!("value to send {:?}", value_to_send);
-                let _ = stream.write_all(value_to_send.as_bytes());
-            }
-            _ => {}
-        }
-    } else {
-        println!("Key Doesn't exists");
-    }
-}
-
-pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let map = store.lock().unwrap();
-
-    if let Some(value_entry) = map.get(&elements_array[1]) {
-        match value_entry.value {
-            types::StoredValue::String(_) => {
-                let _ = stream.write_all(b"+string\r\n");
-            }
-
-            types::StoredValue::Stream(_) => {
-                let _ = stream.write_all(b"+stream\r\n");
-            }
-
-            // _ => {}
-        }
-    } else {
-        let _ = stream.write_all(b"+none\r\n");
-    }
 }

@@ -36,5 +36,5 @@ impl List {
     }
 }
 
-pub type SharedStore = Arc<Mutex<HashMap<String, ValueEntry>>>;
+pub type SharedStore = Arc<(Mutex<HashMap<String, ValueEntry>>, Condvar)>;
 pub type SharedMainList = Arc<(Mutex<Vec<List>>, Condvar)>;

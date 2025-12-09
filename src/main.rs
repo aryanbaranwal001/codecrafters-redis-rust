@@ -9,7 +9,7 @@ mod helper;
 mod types;
 
 fn main() {
-    let store: types::SharedStore = Arc::new(Mutex::new(HashMap::new()));
+    let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
     println!("------------------------------------------------");
@@ -122,7 +122,7 @@ fn handle_connection(
                 }
 
                 "xread" => {
-                    commands::handle_xead(&mut stream, &mut elements_array, store);
+                    commands::handle_xread(&mut stream, &mut elements_array, store);
                 }
 
                 _ => {
