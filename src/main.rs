@@ -150,7 +150,14 @@ fn handle_connection(
                             _ => {}
                         }
                     } else {
-                        println!("Key Doesn't exists");
+                        let value_entry = types::ValueEntry {
+                            value: types::StoredValue::String("1".to_string()),
+                            expires_at: None,
+                        };
+                        map.insert(elements_array[1].clone(), value_entry);
+                        let data_to_send = b":1\r\n";
+
+                        let _ = stream.write_all(data_to_send);
                     }
                 }
 
