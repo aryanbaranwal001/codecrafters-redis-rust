@@ -5,6 +5,12 @@ use std::net::TcpStream;
 
 use crate::types;
 
+pub fn handle_exec_under_multi(vector_of_commands: &Vec<Vec<String>>, stream: &mut TcpStream) {
+    if vector_of_commands.len() == 0 {
+        let _ = stream.write_all(b"*0\r\n");
+    }
+}
+
 // bool getting returned is "is_entry_id_invalid"
 pub fn validate_entry_id(
     elements_array: &Vec<String>,
@@ -142,8 +148,6 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
 
                 elements_array.push(String::from_utf8_lossy(word).to_string());
 
-                // println!("single element in elements array ==> {:?}", String::from_utf8_lossy(word));
-
                 counter += (no_of_elements_in_bulk_str as usize) - 1;
 
                 // to jump over \r\n to next element
@@ -153,7 +157,7 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
             _ => {}
         }
     }
-    println!("logger::elements array  ==> {:?}", elements_array);
+    println!("[INFO] elements array: {:?}", elements_array);
 
     elements_array
 }
@@ -236,9 +240,6 @@ pub fn edit_the_new_starting_indexes_for_blocking_xread(
                 types::StoredValue::Stream(entry_vector) => {
                     let id = entry_vector.last().unwrap().id.clone();
 
-                    println!("last id {}", id);
-                    println!("stream name {}", elements_array[i + 2]);
-
                     let mut s = id.splitn(2, "-");
                     let (last_id_one, mut last_id_two) = (
                         s.next().unwrap().parse::<u64>().unwrap(),
@@ -247,11 +248,8 @@ pub fn edit_the_new_starting_indexes_for_blocking_xread(
 
                     last_id_two = last_id_two + 1;
                     let start_id_new = format!("{}-{}", last_id_one, last_id_two);
-                    println!("element array before editing start end ids {:?}", elements_array);
 
                     elements_array[i + 2 + no_of_streams] = start_id_new;
-
-                    println!("element array after editing start end ids {:?}", elements_array);
                 }
 
                 _ => {}
@@ -278,7 +276,6 @@ pub fn get_streams_array(map: &HashMap<String, types::ValueEntry>, elements_arra
 
         // getting the full entries array
         // stream exists
-        println!("elemenst array {:?}", elements_array);
 
         if let Some(value_entry) = map.get(&elements_array[i + 2]) {
             match &value_entry.value {
@@ -322,7 +319,6 @@ pub fn get_streams_array(map: &HashMap<String, types::ValueEntry>, elements_arra
                                 value.len(),
                                 value
                             );
-                            println!("key value {}, {}", key, value);
                             hashmap_array.push_str(&map_bulk_data);
                         }
 

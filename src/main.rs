@@ -130,6 +130,8 @@ fn handle_connection(
                     let mut multi_cmd_buffer = [0; 512];
                     let _ = stream.write_all(b"+OK\r\n");
 
+                    let mut vector_of_commands: Vec<Vec<String>> = Vec::new();
+
                     loop {
                         match stream.read(&mut multi_cmd_buffer) {
                             Ok(0) => {
@@ -141,11 +143,14 @@ fn handle_connection(
 
                                 (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
 
-                                let mut _elements_array = helper::parsing_elements(
-                                    &multi_cmd_buffer,
-                                    counter,
-                                    no_of_elements
-                                );
+                                let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+
+                                if cmd_array[0].to_ascii_lowercase() == "exec" {
+                                    helper::handle_exec_under_multi(&vector_of_commands, &mut stream);
+                                    break;
+                                }
+
+                                vector_of_commands.push(cmd_array);
 
                                 let _ = stream.write_all(b"+QUEUED\r\n");
                             }
