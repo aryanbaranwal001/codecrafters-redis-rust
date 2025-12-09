@@ -60,7 +60,7 @@ pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &t
             _ => {}
         }
     } else {
-        println!("Key Doesn't exists");
+        let _ = stream.write_all(b"$-1\r\n");
     }
 }
 
@@ -588,5 +588,3 @@ pub fn handle_incr(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
         let _ = stream.write_all(data_to_send);
     }
 }
-
-
