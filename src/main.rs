@@ -12,39 +12,38 @@ fn main() {
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
-    println!("------------------------------------------------");
+    println!("--------------------------------------------");
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
     for connection in listener.incoming() {
-        // cloning store for each thread
-        let store_clone = store.clone();
-        let main_list_clone = main_list.clone();
+        let store_clone = Arc::clone(&store);
+        let main_list_clone = Arc::clone(&main_list);
 
-        let _ = thread::spawn(move || {
+        thread::spawn(move || {
             match connection {
                 Ok(mut stream) => {
-                    println!("accepted new connection");
+                    println!("[INFO] accepted new connection");
 
                     let mut buffer = [0; 512];
 
                     loop {
                         match stream.read(&mut buffer) {
                             Ok(0) => {
-                                println!("client disconnected");
+                                println!("[INFO] client disconnected");
                                 return;
                             }
                             Ok(_n) => {
                                 stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone);
                             }
                             Err(e) => {
-                                println!("error reading stream: {e}");
+                                println!("[ERROR] error reading stream: {e}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    println!("error: {}", e);
+                    println!("[ERROR] error making connection: {e}");
                 }
             }
         });
