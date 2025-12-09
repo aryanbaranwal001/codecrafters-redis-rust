@@ -1,6 +1,7 @@
+use std::net::TcpStream;
 use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 use std::u64;
-
+use std::io::{Write, Read};
 use crate::types;
 use crate::helper;
 
@@ -582,5 +583,44 @@ pub fn handle_incr(elements_array: &mut Vec<String>, store: &types::SharedStore)
         let data_to_send = ":1\r\n";
 
         return data_to_send.to_string();
+    }
+}
+
+pub fn handle_multi(stream: &mut TcpStream,store: &types::SharedStore, main_list_store: &types::SharedMainList) {
+    let mut multi_cmd_buffer = [0; 512];
+    let _ = stream.write_all(b"+OK\r\n");
+
+    let mut vector_of_commands: Vec<Vec<String>> = Vec::new();
+
+    loop {
+        match stream.read(&mut multi_cmd_buffer) {
+            Ok(0) => {
+                println!("[INFO] connection disconnected");
+            }
+            Ok(_n) => {
+                let mut counter = 0;
+                let no_of_elements;
+
+                (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
+
+                let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+
+                if cmd_array[0].to_ascii_lowercase() == "exec" {
+                    let response = helper::handle_exec_under_multi(&vector_of_commands, store, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
+                    break;
+                } else if cmd_array[0].to_ascii_lowercase() == "discard" {
+                    let _ = stream.write_all("+OK\r\n".as_bytes());
+                    break;
+                }
+
+                vector_of_commands.push(cmd_array);
+
+                let _ = stream.write_all(b"+QUEUED\r\n");
+            }
+            Err(e) => {
+                println!("[ERROR] error reading stream: {e}");
+            }
+        }
     }
 }

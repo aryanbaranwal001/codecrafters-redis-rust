@@ -83,6 +83,7 @@ fn handle_connection(
                 "get" => {
                     let response = commands::handle_get(elements_array, store);
                     let _ = stream.write_all(response.as_bytes());
+                    println!("[DEBUG] xadd response: {:?}", response);
                 }
 
                 "rpush" => {
@@ -123,7 +124,6 @@ fn handle_connection(
                 "xadd" => {
                     let response = commands::handle_xadd(&mut elements_array, store);
                     let _ = stream.write_all(response.as_bytes());
-                    println!("[DEBUG] xadd response: {:?}", response);
                 }
 
                 "xrange" => {
@@ -135,50 +135,19 @@ fn handle_connection(
                     let response = commands::handle_xread(&mut elements_array, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
-                
+
                 "incr" => {
                     let response = commands::handle_incr(&mut elements_array, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "multi" => {
-                    let mut multi_cmd_buffer = [0; 512];
-                    let _ = stream.write_all(b"+OK\r\n");
+                    commands::handle_multi(&mut stream, store, main_list_store);
+                }
 
-                    let mut vector_of_commands: Vec<Vec<String>> = Vec::new();
-
-                    loop {
-                        match stream.read(&mut multi_cmd_buffer) {
-                            Ok(0) => {
-                                println!("[INFO] connection disconnected");
-                            }
-                            Ok(_n) => {
-                                let mut counter = 0;
-                                let no_of_elements;
-
-                                (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
-
-                                let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
-
-                                if cmd_array[0].to_ascii_lowercase() == "exec" {
-                                    let response = helper::handle_exec_under_multi(
-                                        &vector_of_commands,
-                                        store,
-                                        main_list_store
-                                    );
-                                    let _ = stream.write_all(response.as_bytes());
-                                    break;
-                                }
-
-                                vector_of_commands.push(cmd_array);
-
-                                let _ = stream.write_all(b"+QUEUED\r\n");
-                            }
-                            Err(e) => {
-                                println!("[ERROR] error reading stream: {e}");
-                            }
-                        }
-                    }
+                // discard without multi
+                "discard" => {
+                    let _ = stream.write_all(b"-ERR DISCARD without MULTI\r\n");
                 }
 
                 // exec without multi
