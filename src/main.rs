@@ -126,40 +126,11 @@ fn handle_connection(
                 }
 
                 "incr" => {
-                    let (s, _) = &**store;
-                    let mut map = s.lock().unwrap();
-                    if let Some(val) = map.get_mut(&elements_array[1]) {
-                        match &mut val.value {
-                            types::StoredValue::String(string_var) => {
-                                println!("value, word {:?}", string_var);
+                    commands::handle_incr(&mut stream, &mut elements_array, store);
+                }
 
-                                match string_var.parse::<u32>() {
-                                    Ok(n) => {
-                                        let updated_num = n + 1;
-
-                                        *string_var = updated_num.to_string();
-
-                                        let data_to_send = format!(":{}\r\n", updated_num);
-                                        let _ = stream.write_all(data_to_send.as_bytes());
-                                    }
-                                    Err(_) => {
-                                        let data_to_send = b"-ERR value is not an integer or out of range\r\n";
-                                        let _ = stream.write_all(data_to_send);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        let value_entry = types::ValueEntry {
-                            value: types::StoredValue::String("1".to_string()),
-                            expires_at: None,
-                        };
-                        map.insert(elements_array[1].clone(), value_entry);
-                        let data_to_send = b":1\r\n";
-
-                        let _ = stream.write_all(data_to_send);
-                    }
+                "multi" => {
+                    let _ = stream.write_all(b"+OK\r\n");
                 }
 
                 _ => {

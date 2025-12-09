@@ -12,100 +12,118 @@ pub fn handle_echo(stream: &mut TcpStream, elements_array: Vec<String>) {
     let _ = stream.write_all(bulk_str_to_send.as_bytes());
 }
 
-pub fn handle_blpop(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
-    let (main_list_guard, cvar) = &**main_list_store;
-    let mut main_list = main_list_guard.lock().unwrap();
+pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let mut map = s.lock().unwrap();
+    let mut expires_at = None;
 
-    let mut timeout = Duration::from_millis((&elements_array[2].parse::<f32>().unwrap() * (1000 as f32)) as u64);
-
-    // blocking for infinite time
-    if (0 as f32) == elements_array[2].parse::<f32>().unwrap() {
-        timeout = Duration::from_secs(u64::MAX);
+    if let Some(time_setter_args) = elements_array.get(3) {
+        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
     }
 
-    let mut _is_empty: bool = false;
-    loop {
-        if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-            if inner.vec.is_empty() {
-                _is_empty = true;
-            } else {
-                let first_element = inner.vec.remove(0);
+    let value_entry = types::ValueEntry {
+        value: types::StoredValue::String(elements_array[2].clone()),
+        expires_at,
+    };
 
-                let data_to_send = format!(
-                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                    inner.name.len(),
-                    inner.name,
-                    first_element.len(),
-                    first_element
-                );
+    map.insert(elements_array[1].clone(), value_entry);
 
-                let _ = stream.write_all(data_to_send.as_bytes());
-                break;
-            }
-        } else {
-            _is_empty = true;
-        }
+    println!("logger::map ==> {:?}", map);
 
-        if _is_empty {
-            println!("waiting for vec to get filled");
-
-            let (mainlist_res, timeout_res) = cvar.wait_timeout(main_list, timeout).unwrap();
-
-            main_list = mainlist_res;
-
-            if timeout_res.timed_out() {
-                let _ = stream.write_all(b"*-1\r\n");
-                break;
-            }
-            _is_empty = false;
-        }
-    }
+    let _ = stream.write_all("+OK\r\n".as_bytes());
 }
 
-pub fn handle_lpop(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
-    let (main_list_guard, _) = &**main_list_store;
-    let mut main_list = main_list_guard.lock().unwrap();
-
-    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        if let Some(_) = elements_array.get(2) {
-            let mut no_of_elements_to_remove = elements_array[2].parse::<usize>().unwrap();
-
-            if no_of_elements_to_remove > inner.vec.len() {
-                no_of_elements_to_remove = inner.vec.len();
+pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let mut map = s.lock().unwrap();
+    if let Some(val) = map.get(&elements_array[1]) {
+        match val.expires_at {
+            Some(expire_time) => {
+                if Instant::now() >= expire_time {
+                    map.remove(&elements_array[1]);
+                    let _ = stream.write_all("$-1\r\n".as_bytes());
+                    return;
+                } else {
+                }
             }
+            None => {}
+        }
 
-            let mut data_to_send: String = String::new();
-            data_to_send.push_str(&format!("*{}\r\n", no_of_elements_to_remove));
+        match &val.value {
+            types::StoredValue::String(string_var) => {
+                println!("value, word {:?}", string_var);
 
-            for _ in 0..no_of_elements_to_remove {
-                let first_element = inner.vec.remove(0);
-                data_to_send.push_str(&format!("${}\r\n{}\r\n", first_element.len(), first_element));
+                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
+                println!("value to send {:?}", value_to_send);
+                let _ = stream.write_all(value_to_send.as_bytes());
             }
-
-            let _ = stream.write_all(data_to_send.as_bytes());
-        } else {
-            let first_element = inner.vec.remove(0);
-
-            let data_to_send = format!("${}\r\n{}\r\n", first_element.len(), first_element);
-
-            let _ = stream.write_all(data_to_send.as_bytes());
+            _ => {}
         }
     } else {
-        let _ = stream.write_all(b"$-1\r\n");
+        println!("Key Doesn't exists");
     }
 }
 
-pub fn handle_llen(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
-    let (main_list_guard, _) = &**main_list_store;
+pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
+    println!("rpush getting triggered");
+    let (main_list_guard, cvar) = &**main_list_store;
+
     let mut main_list = main_list_guard.lock().unwrap();
 
     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+        for i in 2..elements_array.len() {
+            inner.vec.push(elements_array[i].clone());
+        }
+
+        println!("no of elements in list {}", inner.vec.len());
+
         let data_to_send = format!(":{}\r\n", inner.vec.len());
 
         let _ = stream.write_all(data_to_send.as_bytes());
     } else {
-        let _ = stream.write_all(b":0\r\n");
+        let mut new_list = types::List::new(elements_array[1].as_str());
+
+        for i in 2..elements_array.len() {
+            new_list.vec.push(elements_array[i].clone());
+        }
+
+        let data_to_send = format!(":{}\r\n", new_list.vec.len());
+        let _ = stream.write_all(data_to_send.as_bytes());
+        main_list.push(new_list);
     }
+    cvar.notify_one();
+
+    println!("logger::main_list => {:?}", main_list);
+}
+
+pub fn handle_lpush(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
+    let (main_list_guard, _) = &**main_list_store;
+
+    let mut main_list = main_list_guard.lock().unwrap();
+
+    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+        for i in 2..elements_array.len() {
+            inner.vec.insert(0, elements_array[i].clone());
+        }
+
+        println!("no of elements in list {}", inner.vec.len());
+
+        let data_to_send = format!(":{}\r\n", inner.vec.len());
+
+        let _ = stream.write_all(data_to_send.as_bytes());
+    } else {
+        let mut new_list = types::List::new(elements_array[1].as_str());
+
+        for i in 2..elements_array.len() {
+            new_list.vec.insert(0, elements_array[i].clone());
+        }
+
+        let data_to_send = format!(":{}\r\n", new_list.vec.len());
+        let _ = stream.write_all(data_to_send.as_bytes());
+        main_list.push(new_list);
+    }
+
+    println!("logger::main_list => {:?}", main_list);
 }
 
 pub fn handle_lrange(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
@@ -181,66 +199,120 @@ pub fn handle_lrange(stream: &mut TcpStream, elements_array: Vec<String>, main_l
     }
 }
 
-pub fn handle_lpush(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
+pub fn handle_llen(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
     let (main_list_guard, _) = &**main_list_store;
-
     let mut main_list = main_list_guard.lock().unwrap();
 
     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        for i in 2..elements_array.len() {
-            inner.vec.insert(0, elements_array[i].clone());
-        }
-
-        println!("no of elements in list {}", inner.vec.len());
-
         let data_to_send = format!(":{}\r\n", inner.vec.len());
 
         let _ = stream.write_all(data_to_send.as_bytes());
     } else {
-        let mut new_list = types::List::new(elements_array[1].as_str());
-
-        for i in 2..elements_array.len() {
-            new_list.vec.insert(0, elements_array[i].clone());
-        }
-
-        let data_to_send = format!(":{}\r\n", new_list.vec.len());
-        let _ = stream.write_all(data_to_send.as_bytes());
-        main_list.push(new_list);
+        let _ = stream.write_all(b":0\r\n");
     }
-
-    println!("logger::main_list => {:?}", main_list);
 }
 
-pub fn handle_rpush(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
-    println!("rpush getting triggered");
-    let (main_list_guard, cvar) = &**main_list_store;
-
+pub fn handle_lpop(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
+    let (main_list_guard, _) = &**main_list_store;
     let mut main_list = main_list_guard.lock().unwrap();
 
     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        for i in 2..elements_array.len() {
-            inner.vec.push(elements_array[i].clone());
+        if let Some(_) = elements_array.get(2) {
+            let mut no_of_elements_to_remove = elements_array[2].parse::<usize>().unwrap();
+
+            if no_of_elements_to_remove > inner.vec.len() {
+                no_of_elements_to_remove = inner.vec.len();
+            }
+
+            let mut data_to_send: String = String::new();
+            data_to_send.push_str(&format!("*{}\r\n", no_of_elements_to_remove));
+
+            for _ in 0..no_of_elements_to_remove {
+                let first_element = inner.vec.remove(0);
+                data_to_send.push_str(&format!("${}\r\n{}\r\n", first_element.len(), first_element));
+            }
+
+            let _ = stream.write_all(data_to_send.as_bytes());
+        } else {
+            let first_element = inner.vec.remove(0);
+
+            let data_to_send = format!("${}\r\n{}\r\n", first_element.len(), first_element);
+
+            let _ = stream.write_all(data_to_send.as_bytes());
         }
-
-        println!("no of elements in list {}", inner.vec.len());
-
-        let data_to_send = format!(":{}\r\n", inner.vec.len());
-
-        let _ = stream.write_all(data_to_send.as_bytes());
     } else {
-        let mut new_list = types::List::new(elements_array[1].as_str());
+        let _ = stream.write_all(b"$-1\r\n");
+    }
+}
 
-        for i in 2..elements_array.len() {
-            new_list.vec.push(elements_array[i].clone());
+pub fn handle_blpop(stream: &mut TcpStream, elements_array: Vec<String>, main_list_store: &types::SharedMainList) {
+    let (main_list_guard, cvar) = &**main_list_store;
+    let mut main_list = main_list_guard.lock().unwrap();
+
+    let mut timeout = Duration::from_millis((&elements_array[2].parse::<f32>().unwrap() * (1000 as f32)) as u64);
+
+    // blocking for infinite time
+    if (0 as f32) == elements_array[2].parse::<f32>().unwrap() {
+        timeout = Duration::from_secs(u64::MAX);
+    }
+
+    let mut _is_empty: bool = false;
+    loop {
+        if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+            if inner.vec.is_empty() {
+                _is_empty = true;
+            } else {
+                let first_element = inner.vec.remove(0);
+
+                let data_to_send = format!(
+                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                    inner.name.len(),
+                    inner.name,
+                    first_element.len(),
+                    first_element
+                );
+
+                let _ = stream.write_all(data_to_send.as_bytes());
+                break;
+            }
+        } else {
+            _is_empty = true;
         }
 
-        let data_to_send = format!(":{}\r\n", new_list.vec.len());
-        let _ = stream.write_all(data_to_send.as_bytes());
-        main_list.push(new_list);
-    }
-    cvar.notify_one();
+        if _is_empty {
+            println!("waiting for vec to get filled");
 
-    println!("logger::main_list => {:?}", main_list);
+            let (mainlist_res, timeout_res) = cvar.wait_timeout(main_list, timeout).unwrap();
+
+            main_list = mainlist_res;
+
+            if timeout_res.timed_out() {
+                let _ = stream.write_all(b"*-1\r\n");
+                break;
+            }
+            _is_empty = false;
+        }
+    }
+}
+
+pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let map = s.lock().unwrap();
+    if let Some(value_entry) = map.get(&elements_array[1]) {
+        match value_entry.value {
+            types::StoredValue::String(_) => {
+                let _ = stream.write_all(b"+string\r\n");
+            }
+
+            types::StoredValue::Stream(_) => {
+                let _ = stream.write_all(b"+stream\r\n");
+            }
+
+            // _ => {}
+        }
+    } else {
+        let _ = stream.write_all(b"+none\r\n");
+    }
 }
 
 pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
@@ -441,80 +513,7 @@ pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, s
     }
 }
 
-pub fn handle_set(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let (s, _) = &**store;
-    let mut map = s.lock().unwrap();
-    let mut expires_at = None;
-
-    if let Some(time_setter_args) = elements_array.get(3) {
-        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
-    }
-
-    let value_entry = types::ValueEntry {
-        value: types::StoredValue::String(elements_array[2].clone()),
-        expires_at,
-    };
-
-    map.insert(elements_array[1].clone(), value_entry);
-
-    println!("logger::map ==> {:?}", map);
-
-    let _ = stream.write_all("+OK\r\n".as_bytes());
-}
-
-pub fn handle_get(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let (s, _) = &**store;
-    let mut map = s.lock().unwrap();
-    if let Some(val) = map.get(&elements_array[1]) {
-        match val.expires_at {
-            Some(expire_time) => {
-                if Instant::now() >= expire_time {
-                    map.remove(&elements_array[1]);
-                    let _ = stream.write_all("$-1\r\n".as_bytes());
-                    return;
-                } else {
-                }
-            }
-            None => {}
-        }
-
-        match &val.value {
-            types::StoredValue::String(string_var) => {
-                println!("value, word {:?}", string_var);
-
-                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
-                println!("value to send {:?}", value_to_send);
-                let _ = stream.write_all(value_to_send.as_bytes());
-            }
-            _ => {}
-        }
-    } else {
-        println!("Key Doesn't exists");
-    }
-}
-
-pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &types::SharedStore) {
-    let (s, _) = &**store;
-    let map = s.lock().unwrap();
-    if let Some(value_entry) = map.get(&elements_array[1]) {
-        match value_entry.value {
-            types::StoredValue::String(_) => {
-                let _ = stream.write_all(b"+string\r\n");
-            }
-
-            types::StoredValue::Stream(_) => {
-                let _ = stream.write_all(b"+stream\r\n");
-            }
-
-            // _ => {}
-        }
-    } else {
-        let _ = stream.write_all(b"+none\r\n");
-    }
-}
-
 pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
-    
     // $ will pass nonetheless, anything will pass in place of entry ids
     // blocking will always happen irrespective of whatever data is already present or not
     // blocking if stream is not available or entries in it are not available
@@ -552,3 +551,42 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
         let _ = stream.write_all(b"*-1\r\n");
     }
 }
+
+pub fn handle_incr(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+    let (s, _) = &**store;
+    let mut map = s.lock().unwrap();
+    if let Some(val) = map.get_mut(&elements_array[1]) {
+        match &mut val.value {
+            types::StoredValue::String(string_var) => {
+                println!("value, word {:?}", string_var);
+
+                match string_var.parse::<u32>() {
+                    Ok(n) => {
+                        let updated_num = n + 1;
+
+                        *string_var = updated_num.to_string();
+
+                        let data_to_send = format!(":{}\r\n", updated_num);
+                        let _ = stream.write_all(data_to_send.as_bytes());
+                    }
+                    Err(_) => {
+                        let data_to_send = b"-ERR value is not an integer or out of range\r\n";
+                        let _ = stream.write_all(data_to_send);
+                    }
+                }
+            }
+            _ => {}
+        }
+    } else {
+        let value_entry = types::ValueEntry {
+            value: types::StoredValue::String("1".to_string()),
+            expires_at: None,
+        };
+        map.insert(elements_array[1].clone(), value_entry);
+        let data_to_send = b":1\r\n";
+
+        let _ = stream.write_all(data_to_send);
+    }
+}
+
+
