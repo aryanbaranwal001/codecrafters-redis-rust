@@ -514,6 +514,8 @@ pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &
 }
 
 pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+    
+    // $ will pass nonetheless, anything will pass in place of entry ids
     // blocking will always happen irrespective of whatever data is already present or not
     // blocking if stream is not available or entries in it are not available
     let (s, cvar) = &**store;
