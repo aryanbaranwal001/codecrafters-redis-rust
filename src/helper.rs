@@ -1,20 +1,16 @@
-use std::io::Write;
 use std::u32;
 use std::{ collections::HashMap, time::Instant };
-use std::net::TcpStream;
 
 use crate::types;
 use crate::commands;
 
 pub fn handle_exec_under_multi(
     vector_of_commands: &Vec<Vec<String>>,
-    stream: &mut TcpStream,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList
-) {
-
+) -> String {
     if vector_of_commands.len() == 0 {
-        let _ = stream.write_all(b"*0\r\n");
+        return "*0\r\n".to_string();
     } else {
     }
 
@@ -24,6 +20,8 @@ pub fn handle_exec_under_multi(
         let response = handle_exec_commands(vector_of_commands[i].clone(), store, main_list_store);
         response_array.push_str(&response);
     }
+
+    return response_array;
 }
 
 fn handle_exec_commands<'a>(
@@ -55,32 +53,20 @@ fn handle_exec_commands<'a>(
 
         "type" => { commands::handle_type(elements_array, store) }
 
-        // "xadd" => {
-        //     commands::handle_xadd(stream, &mut elements_array, store);
-        // }
+        "xadd" => { commands::handle_xadd(&mut elements_array, store) }
 
-        // "xrange" => {
-        //     commands::handle_xrange(stream, &mut elements_array, store);
-        // }
+        "xrange" => { commands::handle_xrange(&mut elements_array, store) }
 
-        // "xread" => {
-        //     commands::handle_xread(stream, &mut elements_array, store);
-        // }
+        "xread" => { commands::handle_xread(&mut elements_array, store) }
 
-        // "incr" => {
-        //     commands::handle_incr(stream, &mut elements_array, store);
-        // }
+        "incr" => { commands::handle_incr(&mut elements_array, store) }
 
         _ => { "Not a valid command".to_string() }
     }
 }
 
 // bool getting returned is "is_entry_id_invalid"
-pub fn validate_entry_id(
-    elements_array: &Vec<String>,
-    map: &HashMap<String, types::ValueEntry>,
-    stream: &mut TcpStream
-) -> bool {
+pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, types::ValueEntry>) -> (bool, String) {
     let id = elements_array[2].clone();
 
     let s = &mut id.splitn(2, "-");
@@ -89,8 +75,7 @@ pub fn validate_entry_id(
     // checks for 0-0
     if incoming_id_one_str.parse::<u32>().unwrap() == 0 && incoming_id_two_str.parse::<u32>().unwrap() == 0 {
         let data_to_send = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
-        let _ = stream.write_all(data_to_send.as_bytes());
-        return true;
+        return (true, data_to_send.to_string());
     }
 
     // if stream exists
@@ -107,31 +92,30 @@ pub fn validate_entry_id(
                 // checking if time part is correct
 
                 if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
-                    return false;
+                    (false, "unused".to_string())
                 } else if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
                     // checking if sequence number is correct
                     if incoming_id_two_str.parse::<u32>().unwrap() <= last_id_two {
                         let data_to_send =
                             "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                        let _ = stream.write_all(data_to_send.as_bytes());
-                        return true;
+
+                        return (true, data_to_send.to_string());
                     }
-                    return false;
+                    (false, "unused".to_string())
                 } else {
                     let data_to_send =
                         "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                    let _ = stream.write_all(data_to_send.as_bytes());
-                    return true;
+                    (true, data_to_send.to_string())
                 }
             }
             _ => {
                 // this will never run
-                return false;
+                (false, "unused".to_string())
             }
         }
     } else {
         // if stream doesn't exists and we have checked for 0-0 then that entry id is valid
-        return false;
+        (false, "unused".to_string())
     }
 }
 

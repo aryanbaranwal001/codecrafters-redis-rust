@@ -68,7 +68,6 @@ fn handle_connection(
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
                     let response = commands::handle_echo(elements_array);
-
                     let _ = stream.write_all(response.as_bytes());
                 }
 
@@ -122,19 +121,24 @@ fn handle_connection(
                 }
 
                 "xadd" => {
-                    commands::handle_xadd(&mut stream, &mut elements_array, store);
+                    let response = commands::handle_xadd(&mut elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
+                    println!("[DEBUG] xadd response: {:?}", response);
                 }
 
                 "xrange" => {
-                    commands::handle_xrange(&mut stream, &mut elements_array, store);
+                    let response = commands::handle_xrange(&mut elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "xread" => {
-                    commands::handle_xread(&mut stream, &mut elements_array, store);
+                    let response = commands::handle_xread(&mut elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
-
+                
                 "incr" => {
-                    commands::handle_incr(&mut stream, &mut elements_array, store);
+                    let response = commands::handle_incr(&mut elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "multi" => {
@@ -157,12 +161,12 @@ fn handle_connection(
                                 let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
 
                                 if cmd_array[0].to_ascii_lowercase() == "exec" {
-                                    helper::handle_exec_under_multi(
+                                    let response = helper::handle_exec_under_multi(
                                         &vector_of_commands,
-                                        &mut stream,
                                         store,
                                         main_list_store
                                     );
+                                    let _ = stream.write_all(response.as_bytes());
                                     break;
                                 }
 

@@ -1,5 +1,3 @@
-use std::net::TcpStream;
-use std::io::Write;
 use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 use std::u64;
 
@@ -299,21 +297,16 @@ pub fn handle_type(elements_array: Vec<String>, store: &types::SharedStore) -> S
     let map = s.lock().unwrap();
     if let Some(value_entry) = map.get(&elements_array[1]) {
         match value_entry.value {
-            types::StoredValue::String(_) => {
-                "+string\r\n".to_string()
-            }
+            types::StoredValue::String(_) => { "+string\r\n".to_string() }
 
-            types::StoredValue::Stream(_) => {
-                "+stream\r\n".to_string()
-            }
-
+            types::StoredValue::Stream(_) => { "+stream\r\n".to_string() }
         }
     } else {
         "+none\r\n".to_string()
     }
 }
 
-pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+pub fn handle_xadd(elements_array: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (s, cvar) = &**store;
     let mut map = s.lock().unwrap();
 
@@ -349,8 +342,7 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                         // id is not valid
                         let data_to_send =
                             "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                        let _ = stream.write_all(data_to_send.as_bytes());
-                        return;
+                        return data_to_send.to_string();
                     }
                 }
                 _ => {}
@@ -388,8 +380,8 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                         // id is not valid
                         let data_to_send =
                             "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                        let _ = stream.write_all(data_to_send.as_bytes());
-                        return;
+
+                        return data_to_send.to_string();
                     }
                 }
                 _ => {}
@@ -410,13 +402,14 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
 
         // if ids are not generated, then must be validated
     } else {
-        let is_entry_id_invalid = helper::validate_entry_id(&elements_array, &map, stream);
+        let (is_entry_id_invalid, data_to_send) = helper::validate_entry_id(&elements_array, &map);
         if is_entry_id_invalid {
-            return;
+            return data_to_send;
         }
     }
 
     // if stream exists, pushing the entry to the stream
+    let data_to_send_final;
     if let Some(value_entry) = map.get_mut(&elements_array[1]) {
         let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
 
@@ -429,7 +422,7 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
             }
             _ => {}
         }
-        let _ = stream.write_all(data_to_send.as_bytes());
+        data_to_send_final = data_to_send;
     } else {
         let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
 
@@ -445,13 +438,14 @@ pub fn handle_xadd(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
             value: types::StoredValue::Stream(vec_to_move),
             expires_at: None,
         });
-        let _ = stream.write_all(data_to_send.as_bytes());
+        data_to_send_final = data_to_send;
     }
 
     cvar.notify_one();
+    return data_to_send_final;
 }
 
-pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+pub fn handle_xrange(elements_array: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let map = s.lock().unwrap();
     // will get these in u128
@@ -500,18 +494,20 @@ pub fn handle_xrange(stream: &mut TcpStream, elements_array: &mut Vec<String>, s
                     array_of_array_data.push_str(&entry_array);
                 }
 
-                let _ = stream.write(array_of_array_data.as_bytes());
+                return array_of_array_data;
             }
-            _ => {}
+            _ => {
+                return "unused".to_string();
+            }
         }
 
         // stream doesn't exists
     } else {
-        let _ = stream.write_all(b"stream with given stream key doesn't exists");
+        return "stream with given stream key doesn't exists".to_string();
     }
 }
 
-pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+pub fn handle_xread(elements_array: &mut Vec<String>, store: &types::SharedStore) -> String {
     // $ will pass nonetheless, anything will pass in place of entry ids
     // blocking will always happen irrespective of whatever data is already present or not
     // blocking if stream is not available or entries in it are not available
@@ -544,13 +540,13 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
 
         let data_to_send = format!("{}{}", final_array_data_of_streams_head, final_array_data_of_streams);
 
-        let _ = stream.write(data_to_send.as_bytes());
+        return data_to_send;
     } else {
-        let _ = stream.write_all(b"*-1\r\n");
+        return "*-1\r\n".to_string();
     }
 }
 
-pub fn handle_incr(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+pub fn handle_incr(elements_array: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
     if let Some(val) = map.get_mut(&elements_array[1]) {
@@ -565,15 +561,17 @@ pub fn handle_incr(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
                         *string_var = updated_num.to_string();
 
                         let data_to_send = format!(":{}\r\n", updated_num);
-                        let _ = stream.write_all(data_to_send.as_bytes());
+                        return data_to_send;
                     }
                     Err(_) => {
-                        let data_to_send = b"-ERR value is not an integer or out of range\r\n";
-                        let _ = stream.write_all(data_to_send);
+                        let data_to_send = "-ERR value is not an integer or out of range\r\n";
+                        return data_to_send.to_string();
                     }
                 }
             }
-            _ => {}
+            _ => {
+                return "unused".to_string();
+            }
         }
     } else {
         let value_entry = types::ValueEntry {
@@ -581,8 +579,8 @@ pub fn handle_incr(stream: &mut TcpStream, elements_array: &mut Vec<String>, sto
             expires_at: None,
         };
         map.insert(elements_array[1].clone(), value_entry);
-        let data_to_send = b":1\r\n";
+        let data_to_send = ":1\r\n";
 
-        let _ = stream.write_all(data_to_send);
+        return data_to_send.to_string();
     }
 }
