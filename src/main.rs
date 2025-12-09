@@ -142,8 +142,9 @@ fn handle_connection(
                                         let data_to_send = format!(":{}\r\n", updated_num);
                                         let _ = stream.write_all(data_to_send.as_bytes());
                                     }
-                                    Err(e) => {
-                                        println!("key is not a number {}", e);
+                                    Err(_) => {
+                                        let data_to_send = b"-ERR value is not an integer or out of range\r\n";
+                                        let _ = stream.write_all(data_to_send);
                                     }
                                 }
                             }
