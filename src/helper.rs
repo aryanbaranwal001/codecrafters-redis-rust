@@ -4,10 +4,74 @@ use std::{ collections::HashMap, time::Instant };
 use std::net::TcpStream;
 
 use crate::types;
+use crate::commands;
 
-pub fn handle_exec_under_multi(vector_of_commands: &Vec<Vec<String>>, stream: &mut TcpStream) {
+pub fn handle_exec_under_multi(
+    vector_of_commands: &Vec<Vec<String>>,
+    stream: &mut TcpStream,
+    store: &types::SharedStore,
+    main_list_store: &types::SharedMainList
+) {
+
     if vector_of_commands.len() == 0 {
         let _ = stream.write_all(b"*0\r\n");
+    } else {
+    }
+
+    let mut response_array = format!("*{}\r\n", vector_of_commands.len());
+
+    for i in 0..vector_of_commands.len() {
+        let response = handle_exec_commands(vector_of_commands[i].clone(), store, main_list_store);
+        response_array.push_str(&response);
+    }
+}
+
+fn handle_exec_commands<'a>(
+    elements_array: Vec<String>,
+    store: &types::SharedStore,
+    main_list_store: &types::SharedMainList
+) -> String {
+    let mut elements_array = elements_array;
+
+    match elements_array[0].to_ascii_lowercase().as_str() {
+        "echo" => { commands::handle_echo(elements_array) }
+
+        "ping" => { "+PONG\r\n".to_string() }
+        "set" => { commands::handle_set(elements_array, store) }
+
+        "get" => { commands::handle_get(elements_array, store) }
+
+        "rpush" => { commands::handle_rpush(elements_array, main_list_store) }
+
+        "lpush" => { commands::handle_lpush(elements_array, main_list_store) }
+
+        "lrange" => { commands::handle_lrange(elements_array, main_list_store) }
+
+        "llen" => { commands::handle_llen(elements_array, main_list_store) }
+
+        "lpop" => { commands::handle_lpop(elements_array, main_list_store) }
+
+        "blpop" => { commands::handle_blpop(elements_array, main_list_store) }
+
+        "type" => { commands::handle_type(elements_array, store) }
+
+        // "xadd" => {
+        //     commands::handle_xadd(stream, &mut elements_array, store);
+        // }
+
+        // "xrange" => {
+        //     commands::handle_xrange(stream, &mut elements_array, store);
+        // }
+
+        // "xread" => {
+        //     commands::handle_xread(stream, &mut elements_array, store);
+        // }
+
+        // "incr" => {
+        //     commands::handle_incr(stream, &mut elements_array, store);
+        // }
+
+        _ => { "Not a valid command".to_string() }
     }
 }
 

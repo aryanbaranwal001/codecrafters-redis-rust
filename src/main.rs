@@ -67,7 +67,9 @@ fn handle_connection(
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
-                    commands::handle_echo(&mut stream, elements_array);
+                    let response = commands::handle_echo(elements_array);
+
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "ping" => {
@@ -75,39 +77,48 @@ fn handle_connection(
                 }
 
                 "set" => {
-                    commands::handle_set(&mut stream, elements_array, store);
+                    let response = commands::handle_set(elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "get" => {
-                    commands::handle_get(&mut stream, elements_array, store);
+                    let response = commands::handle_get(elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "rpush" => {
-                    commands::handle_rpush(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_rpush(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lpush" => {
-                    commands::handle_lpush(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_lpush(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lrange" => {
-                    commands::handle_lrange(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_lrange(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "llen" => {
-                    commands::handle_llen(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_llen(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lpop" => {
-                    commands::handle_lpop(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_lpop(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "blpop" => {
-                    commands::handle_blpop(&mut stream, elements_array, main_list_store);
+                    let response = commands::handle_blpop(elements_array, main_list_store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "type" => {
-                    commands::handle_type(&mut stream, elements_array, store);
+                    let response = commands::handle_type(elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "xadd" => {
@@ -146,7 +157,12 @@ fn handle_connection(
                                 let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
 
                                 if cmd_array[0].to_ascii_lowercase() == "exec" {
-                                    helper::handle_exec_under_multi(&vector_of_commands, &mut stream);
+                                    helper::handle_exec_under_multi(
+                                        &vector_of_commands,
+                                        &mut stream,
+                                        store,
+                                        main_list_store
+                                    );
                                     break;
                                 }
 
