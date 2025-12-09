@@ -201,7 +201,6 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
 }
 
 pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u128, u128) {
-
     let start_id_time;
     let start_id_seq;
 
@@ -224,3 +223,44 @@ pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u1
 
     (start_id_time, start_id_seq, end_id_time, end_id_seq)
 }
+
+pub fn edit_the_new_starting_indexes_for_blocking_xread(map:  &HashMap<String, types::ValueEntry>,elements_array: &mut Vec<String>) {
+    let no_of_streams = (elements_array.len() - 2) / 2;
+
+    for i in 0..no_of_streams {
+        if let Some(value_entry) = map.get(&elements_array[i + 2]) {
+            match &value_entry.value {
+                types::StoredValue::Stream(entry_vector) => {
+                    let id = entry_vector.last().unwrap().id.clone();
+
+                    println!("last id {}", id);
+                    println!("stream name {}", elements_array[i + 2]);
+
+                    let mut s = id.splitn(2, "-");
+                    let (last_id_one, mut last_id_two) = (
+                        s.next().unwrap().parse::<u64>().unwrap(),
+                        s.next().unwrap().parse::<u64>().unwrap(),
+                    );
+
+                    last_id_two = last_id_two + 1;
+                    let start_id_new = format!("{}-{}", last_id_one, last_id_two);
+                    println!("element array before editing start end ids {:?}", elements_array);
+
+                    elements_array[i + 2 + no_of_streams] = start_id_new;
+
+                    println!("element array after editing start end ids {:?}", elements_array);
+                }
+
+                _ => {}
+            }
+            // stream doesn't exists
+        } else {
+        }
+    }
+}
+
+
+
+// pub fn get_streams_array() -> String {
+
+// }

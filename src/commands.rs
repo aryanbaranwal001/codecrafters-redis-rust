@@ -513,60 +513,35 @@ pub fn handle_type(stream: &mut TcpStream, elements_array: Vec<String>, store: &
 }
 
 pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, store: &types::SharedStore) {
+    // blocking will always happen irrespective of whatever data is already present or not
+    // blocking if stream is not available or entries in it are not available
     let (s, cvar) = &**store;
     let mut map = s.lock().unwrap();
 
-    let mut block_time: u128 = 0;
-
-    // mutating the elements array so I don't have to add additional support for already implemented xread code
     if elements_array[1].to_ascii_lowercase() == "block" {
         let _ = elements_array.remove(1);
 
         // since above element was removed, following is basically elements_array[2]
-        block_time = elements_array.remove(1).parse::<u128>().unwrap();
-    }
+        let block_time = elements_array.remove(1).parse::<u128>().unwrap();
 
-    // blocking will always happen irrespective of whatever data
-    // blocking if stream is not available or entries in it are not available
-    // stream exists
-    if let Some(value_entry) = map.get(&elements_array[2]) {
-        match &value_entry.value {
-            types::StoredValue::Stream(entry_vector) => {
-                let id = entry_vector.last().unwrap().id.clone();
-                let mut s = id.splitn(2, "-");
-                let mut start_id_new: String = "".to_string();
-                let (last_id_one, mut last_id_two) = (
-                    s.next().unwrap().parse::<u64>().unwrap(),
-                    s.next().unwrap().parse::<u64>().unwrap(),
-                );
+        // this mutates the elements array starting indexes
+        helper::edit_the_new_starting_indexes_for_blocking_xread(&map, elements_array);
 
-                println!("last id {}-{}", last_id_one, last_id_two);
-                
-                last_id_two = last_id_two + 1;
-                start_id_new = format!("{}-{}", last_id_one, last_id_two);
-                println!("last id updated {}-{}", last_id_one, last_id_two);
-                println!("element array {:?}", elements_array);
-                
-                
-                elements_array[3] = start_id_new;
-
-                // block
-                (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time as u64)).unwrap();
-            }
-
-            _ => {}
-        }
-        // stream doesn't exists
-    } else {
-        // block
         (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time as u64)).unwrap();
     }
 
+    let mut final_array_data_of_streams = format!("");
+    let mut no_of_valid_streams = 0;
+
     let no_of_streams = (elements_array.len() - 2) / 2;
 
-    let mut final_array_data_of_streams = format!("*{}\r\n", no_of_streams);
-
     for i in 0..no_of_streams {
+
+
+
+
+
+        
         // will get these in u128
         let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) =
             helper::get_start_and_end_indexes_for_xread(&elements_array[i + 2 + no_of_streams]);
@@ -575,6 +550,9 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
 
         // getting the full entries array
         // stream exists
+        println!("elemenst array {:?}", elements_array);
+
+
         if let Some(value_entry) = map.get(&elements_array[i + 2]) {
             match &value_entry.value {
                 types::StoredValue::Stream(entry_vector) => {
@@ -594,8 +572,10 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
                         .collect();
 
                     if filtered_data.len() == 0 {
-                        let _ = stream.write_all(b"*-1\r\n");
+                        continue;
                     }
+
+                    no_of_valid_streams += 1;
 
                     // array of array data is all the data for a particular stream
                     let mut array_of_array_data = format!("*{}\r\n", filtered_data.len());
@@ -637,5 +617,13 @@ pub fn handle_xread(stream: &mut TcpStream, elements_array: &mut Vec<String>, st
         }
     }
 
-    let _ = stream.write(final_array_data_of_streams.as_bytes());
+    if no_of_valid_streams != 0 {
+        let final_array_data_of_streams_head = format!("*{}\r\n", no_of_valid_streams);
+
+        let data_to_send = format!("{}{}", final_array_data_of_streams_head, final_array_data_of_streams);
+
+        let _ = stream.write(data_to_send.as_bytes());
+    } else {
+        let _ = stream.write_all(b"*-1\r\n");
+    }
 }
