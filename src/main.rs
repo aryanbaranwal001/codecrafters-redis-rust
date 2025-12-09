@@ -63,8 +63,6 @@ fn handle_connection(
             let no_of_elements;
             (no_of_elements, counter) = helper::parse_number(bytes_received, counter);
 
-            // println!("logger::no of elements in resp array ==> {}", no_of_elements);
-
             let mut elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
@@ -129,7 +127,38 @@ fn handle_connection(
                 }
 
                 "multi" => {
+                    let mut multi_cmd_buffer = [0; 512];
                     let _ = stream.write_all(b"+OK\r\n");
+
+                    loop {
+                        match stream.read(&mut multi_cmd_buffer) {
+                            Ok(0) => {
+                                println!("[INFO] connection disconnected");
+                            }
+                            Ok(_n) => {
+                                let mut counter = 0;
+                                let no_of_elements;
+
+                                (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
+
+                                let mut _elements_array = helper::parsing_elements(
+                                    &multi_cmd_buffer,
+                                    counter,
+                                    no_of_elements
+                                );
+
+                                let _ = stream.write_all(b"+QUEUED\r\n");
+                            }
+                            Err(e) => {
+                                println!("[ERROR] error reading stream: {e}");
+                            }
+                        }
+                    }
+                }
+
+                // exec without multi
+                "exec" => {
+                    let _ = stream.write_all(b"-ERR EXEC without MULTI\r\n");
                 }
 
                 _ => {
@@ -142,6 +171,5 @@ fn handle_connection(
             let _ = stream.write_all(b"invalid resp string");
         }
     }
-
     stream
 }
