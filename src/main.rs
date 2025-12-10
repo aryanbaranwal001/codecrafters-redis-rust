@@ -181,6 +181,12 @@ fn handle_connection(
                     let _ = stream.write_all(b"-ERR EXEC without MULTI\r\n");
                 }
 
+                "info" => {
+                    if elements_array[1] == "replication" {
+                        let _ = stream.write_all("$11\r\nrole:master\r\n".as_bytes());
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
