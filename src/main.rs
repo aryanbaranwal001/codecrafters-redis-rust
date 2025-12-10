@@ -3,18 +3,44 @@ use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
 use std::{ thread };
+use clap::Parser;
+
+#[derive(Parser)]
+#[derive(Debug)]
+struct Args {
+    #[arg(short, long)]
+    port: Option<u32>,
+}
 
 mod commands;
 mod helper;
 mod types;
 
 fn main() {
-    let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
-    let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
+    let args = Args::parse();
+    let port;
 
     println!("--------------------------------------------");
+    
+    let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
+    let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
+    
+    println!("[INFO] {:?}", args);
 
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    if let Some(port_num) = args.port {
+        port = format!("{}",port_num);
+        println!("[INFO] starting server with port number: {}", port);
+         
+    
+    } else {
+        port = "6379".to_string();
+        println!("[INFO] port number not provided, starting with default: 6379");
+    }
+
+    let link = format!("127.0.0.1:{}", port);
+
+
+    let listener = TcpListener::bind(link).unwrap();
 
     for connection in listener.incoming() {
         let store_clone = Arc::clone(&store);
