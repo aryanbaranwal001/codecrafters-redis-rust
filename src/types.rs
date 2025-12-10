@@ -1,5 +1,15 @@
 use std::collections::HashMap;
 use std::sync::{ Arc, Condvar, Mutex };
+use clap::Parser;
+
+#[derive(Parser)]
+#[derive(Debug)]
+pub struct Args {
+    #[arg(short, long)]
+    pub port: Option<u32>,
+    #[arg(short, long)]
+    pub replicaof: Option<String>,
+}
 
 // #[derive(Clone)]
 #[derive(Debug)]
@@ -8,8 +18,7 @@ pub enum StoredValue {
     Stream(Vec<Entry>),
 }
 
-
-#[derive(Debug)] 
+#[derive(Debug)]
 pub struct Entry {
     pub id: String,
     pub map: HashMap<String, String>,

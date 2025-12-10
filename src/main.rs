@@ -5,21 +5,12 @@ use std::sync::{ Arc, Condvar, Mutex };
 use std::{ thread };
 use clap::Parser;
 
-#[derive(Parser)]
-#[derive(Debug)]
-struct Args {
-    #[arg(short, long)]
-    port: Option<u32>,
-    #[arg(short, long)]
-    replicaof: Option<String>,
-}
-
 mod commands;
 mod helper;
 mod types;
 
 fn main() {
-    let args = Args::parse();
+    let args = types::Args::parse();
     let port;
     let role;
 
@@ -32,22 +23,32 @@ fn main() {
 
     if let Some(port_num) = args.port {
         port = format!("{}", port_num);
-        println!("[INFO] starting server with port number: {}", port);
+        println!("[INFO] provided with port number: {}", port);
     } else {
         port = "6379".to_string();
-        println!("[INFO] port number not provided, starting with default: 6379");
+        println!("[INFO] not provided with port number, starting with default: 6379");
     }
 
-    if let Some(_master_server_port) = args.replicaof {
+    if let Some(replicaof_string) = args.replicaof {
         role = "role:slave";
-        println!("[INFO] starting server with port number: {}", port);
+
+        let mut s = replicaof_string.splitn(2, " ");
+        let (master_url, marter_port) = (s.next().unwrap(), s.next().unwrap());
+        let master_url_with_port = format!("{}:{}", master_url, marter_port);
+
+        println!("[INFO] trying to connect with master with link: {}", master_url_with_port);
+
+        let mut stream = TcpStream::connect(master_url_with_port).unwrap();
+
+        let _ = stream.write_all(b"*1\r\n$4\r\nPING\r\n");
+
     } else {
         role = "role:master";
-        println!("[INFO] port number not provided, starting with default: 6379");
     }
 
     let link = format!("127.0.0.1:{}", port);
-
+    
+    println!("[INFO] starting server with port number: {}", port);
     let listener = TcpListener::bind(link).unwrap();
 
     for connection in listener.incoming() {
