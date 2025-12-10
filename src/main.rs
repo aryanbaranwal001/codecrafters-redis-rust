@@ -10,6 +10,8 @@ use clap::Parser;
 struct Args {
     #[arg(short, long)]
     port: Option<u32>,
+    #[arg(short, long)]
+    replicaof: Option<String>,
 }
 
 mod commands;
@@ -19,26 +21,32 @@ mod types;
 fn main() {
     let args = Args::parse();
     let port;
+    let role;
 
     println!("--------------------------------------------");
-    
+
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
-    
+
     println!("[INFO] {:?}", args);
 
     if let Some(port_num) = args.port {
-        port = format!("{}",port_num);
+        port = format!("{}", port_num);
         println!("[INFO] starting server with port number: {}", port);
-         
-    
     } else {
         port = "6379".to_string();
         println!("[INFO] port number not provided, starting with default: 6379");
     }
 
-    let link = format!("127.0.0.1:{}", port);
+    if let Some(_master_server_port) = args.replicaof {
+        role = "role:slave";
+        println!("[INFO] starting server with port number: {}", port);
+    } else {
+        role = "role:master";
+        println!("[INFO] port number not provided, starting with default: 6379");
+    }
 
+    let link = format!("127.0.0.1:{}", port);
 
     let listener = TcpListener::bind(link).unwrap();
 
@@ -60,7 +68,7 @@ fn main() {
                                 return;
                             }
                             Ok(_n) => {
-                                stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone);
+                                stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone, role);
                             }
                             Err(e) => {
                                 println!("[ERROR] error reading stream: {e}");
@@ -80,7 +88,8 @@ fn handle_connection(
     bytes_received: &[u8],
     mut stream: TcpStream,
     store: &types::SharedStore,
-    main_list_store: &types::SharedMainList
+    main_list_store: &types::SharedMainList,
+    role: &str
 ) -> TcpStream {
     let mut counter = 0;
 
@@ -183,7 +192,9 @@ fn handle_connection(
 
                 "info" => {
                     if elements_array[1] == "replication" {
-                        let _ = stream.write_all("$11\r\nrole:master\r\n".as_bytes());
+                        let response = format!("${}\r\n{}\r\n", role.len(), role); 
+                
+                        let _ = stream.write_all(response.as_bytes());
                     }
                 }
 
