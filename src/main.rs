@@ -192,8 +192,11 @@ fn handle_connection(
 
                 "info" => {
                     if elements_array[1] == "replication" {
-                        let response = format!("${}\r\n{}\r\n", role.len(), role); 
-                
+                        let data =
+                            format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
+
+                        let response = format!("${}\r\n{}\r\n", data.len(), data);
+
                         let _ = stream.write_all(response.as_bytes());
                     }
                 }
