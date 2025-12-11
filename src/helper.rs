@@ -2,12 +2,121 @@ use std::net::TcpStream;
 use std::u32;
 use std::{ collections::HashMap, time::Instant };
 use std::io::{ Read, Write };
+use std::sync::{ Arc, Mutex };
 
 use crate::types;
 use crate::commands;
 
-pub fn replicate_all_write_commands() {
-    
+pub fn handle_connection_as_slave(
+    mut stream: TcpStream,
+
+    bytes_received: &[u8],
+    store: &types::SharedStore,
+    main_list_store: &types::SharedMainList,
+    role: &str
+) -> TcpStream {
+    let mut counter = 0;
+
+    match bytes_received[counter] {
+        b'*' => {
+            let no_of_elements;
+            (no_of_elements, counter) = parse_number(bytes_received, counter);
+
+            let mut elements_array = parsing_elements(bytes_received, counter, no_of_elements);
+
+            match elements_array[0].to_ascii_lowercase().as_str() {
+                "set" => {
+                    let _ = commands::handle_set(elements_array, store);
+                }
+
+                "get" => {
+                    let _ = commands::handle_get(elements_array, store);
+                }
+
+                "rpush" => {
+                    let _ = commands::handle_rpush(elements_array, main_list_store);
+                }
+
+                "lpush" => {
+                    let _ = commands::handle_lpush(elements_array, main_list_store);
+                }
+
+                "lrange" => {
+                    let _ = commands::handle_lrange(elements_array, main_list_store);
+                }
+
+                "llen" => {
+                    let _ = commands::handle_llen(elements_array, main_list_store);
+                }
+
+                "lpop" => {
+                    let _ = commands::handle_lpop(elements_array, main_list_store);
+                }
+
+                "blpop" => {
+                    let _ = commands::handle_blpop(elements_array, main_list_store);
+                }
+
+                "type" => {
+                    let _ = commands::handle_type(elements_array, store);
+                }
+
+                "xadd" => {
+                    let _ = commands::handle_xadd(&mut elements_array, store);
+                }
+
+                "xrange" => {
+                    let _ = commands::handle_xrange(&mut elements_array, store);
+                }
+
+                "xread" => {
+                    let _ = commands::handle_xread(&mut elements_array, store);
+                }
+
+                "incr" => {
+                    let _ = commands::handle_incr(&mut elements_array, store);
+                }
+
+                // "multi" => {
+                //     commands::handle_multi(&mut stream, store, main_list_store);
+                // }
+
+                // discard without multi
+                // "discard" => {
+                //     let _ = stream.write_all(b"-ERR DISCARD without MULTI\r\n");
+                // }
+
+                // exec without multi
+                // "exec" => {
+                //     let _ = stream.write_all(b"-ERR EXEC without MULTI\r\n");
+                // }
+
+                "info" => {
+                    if elements_array[1] == "replication" {
+                        let data =
+                            format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
+
+                        let response = format!("${}\r\n{}\r\n", data.len(), data);
+
+                        let _ = stream.write_all(response.as_bytes());
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        _ => {}
+    }
+    stream
+}
+
+pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
+    let mut tcp_vec = tcpstream_vector.lock().unwrap();
+
+    for stream in tcp_vec.iter_mut() {
+        let _ = stream.write_all(payload);
+    }
 }
 
 pub fn hand_shake(port: &String, stream: &mut TcpStream) {

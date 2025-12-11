@@ -5,8 +5,6 @@ use std::sync::{ Arc, Condvar, Mutex };
 use std::{ fs, thread };
 use clap::Parser;
 
-use crate::helper::hand_shake;
-
 mod commands;
 mod helper;
 mod types;
@@ -21,7 +19,7 @@ fn main() {
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
-    println!("[INFO] {:?}", args);
+    //////////// HANDLING ARGUEMENTS ////////////
 
     if let Some(port_num) = args.port {
         port = format!("{}", port_num);
@@ -44,21 +42,27 @@ fn main() {
         println!("[INFO] connected with master with link: {}", master_url_with_port);
 
         // program will panic if handshake was not successful
-        hand_shake(&port, &mut stream);
-        
-        helper::replicate_all_write_commands();
+        helper::hand_shake(&port, &mut stream);
     } else {
         role = "role:master";
     }
 
+    //////////// HANDLING CONNECTIONS ////////////
+
+    let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
+
     let link = format!("127.0.0.1:{}", port);
 
     println!("[INFO] starting server with port number: {}", port);
+
     let listener = TcpListener::bind(link).unwrap();
 
     for connection in listener.incoming() {
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
+        let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
+
+        let mut is_connection_slave: bool = false;
 
         thread::spawn(move || {
             match connection {
@@ -66,15 +70,44 @@ fn main() {
                     println!("[INFO] accepted new connection");
 
                     let mut buffer = [0; 512];
+                    let mut already_ran = false;
 
                     loop {
+                        if is_connection_slave && !already_ran {
+                            let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
+
+                            tcp_vecc.push(stream.try_clone().unwrap());
+                            already_ran = true;
+                        }
+
                         match stream.read(&mut buffer) {
                             Ok(0) => {
                                 println!("[INFO] client disconnected");
                                 return;
                             }
-                            Ok(_n) => {
-                                stream = handle_connection(&buffer, stream, &store_clone, &main_list_clone, role);
+                            Ok(n) => {
+                                helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+
+                                if role == "role:slave" {
+                                    stream = helper::handle_connection_as_slave(
+                                        stream,
+                                        &buffer[..n],
+                                        &store_clone,
+                                        &main_list_clone,
+                                        role
+                                    );
+
+                                    continue;
+                                }
+
+                                stream = handle_connection(
+                                    &buffer,
+                                    stream,
+                                    &store_clone,
+                                    &main_list_clone,
+                                    role,
+                                    &mut is_connection_slave
+                                );
                             }
                             Err(e) => {
                                 println!("[ERROR] error reading stream: {e}");
@@ -90,12 +123,15 @@ fn main() {
     }
 }
 
+//////////// CONNECTIONS HELPER FUNCTION ////////////
+
 fn handle_connection(
     bytes_received: &[u8],
     mut stream: TcpStream,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
-    role: &str
+    role: &str,
+    is_connection_slave: &mut bool
 ) -> TcpStream {
     let mut counter = 0;
 
@@ -222,6 +258,8 @@ fn handle_connection(
                     let _ = stream.write_all(header.as_bytes());
 
                     let _ = stream.write_all(&rdb_file_bytes);
+
+                    *is_connection_slave = true;
                 }
 
                 _ => {
