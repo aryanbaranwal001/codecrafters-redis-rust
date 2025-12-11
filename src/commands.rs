@@ -1,31 +1,34 @@
 use std::net::TcpStream;
 use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 use std::u64;
-use std::io::{Write, Read};
-use crate::types;
+use std::io::{ Write, Read };
+use crate::types::{ self };
 use crate::helper;
 
 pub fn handle_echo(elements_array: Vec<String>) -> String {
-    println!("elements array ==> {:?}", elements_array);
-    let bulk_str_to_send = format!("${}\r\n{}\r\n", elements_array[1].as_bytes().len(), elements_array[1]);
-    bulk_str_to_send
+    let value = &elements_array[1];
+
+    let response = format!("${}\r\n{}\r\n", value.len(), value);
+    return response;
 }
 
 pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
-    let mut expires_at = None;
 
-    if let Some(time_setter_args) = elements_array.get(3) {
-        expires_at = helper::handle_expiry(time_setter_args, elements_array.clone());
-    }
+    let key = &elements_array[1];
+    let value = &elements_array[2];
+
+    let expires_at = elements_array
+        .get(3)
+        .and_then(|time_setter_args| helper::handle_expiry(time_setter_args, elements_array.clone()));
 
     let value_entry = types::ValueEntry {
-        value: types::StoredValue::String(elements_array[2].clone()),
+        value: types::StoredValue::String(value.clone()),
         expires_at,
     };
 
-    map.insert(elements_array[1].clone(), value_entry);
+    map.insert(key.clone(), value_entry);
 
     println!("[INFO] map after set command: {:?}", map);
 
@@ -586,7 +589,7 @@ pub fn handle_incr(elements_array: &mut Vec<String>, store: &types::SharedStore)
     }
 }
 
-pub fn handle_multi(stream: &mut TcpStream,store: &types::SharedStore, main_list_store: &types::SharedMainList) {
+pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_list_store: &types::SharedMainList) {
     let mut multi_cmd_buffer = [0; 512];
     let _ = stream.write_all(b"+OK\r\n");
 
@@ -624,3 +627,5 @@ pub fn handle_multi(stream: &mut TcpStream,store: &types::SharedStore, main_list
         }
     }
 }
+
+// handle everything if this is used as slave server

@@ -32,6 +32,7 @@ fn main() {
     if let Some(replicaof_string) = args.replicaof {
         role = "role:slave";
 
+        // Trying to connect to master server
         let mut s = replicaof_string.splitn(2, " ");
         let (master_url, marter_port) = (s.next().unwrap(), s.next().unwrap());
         let master_url_with_port = format!("{}:{}", master_url, marter_port);
@@ -40,14 +41,33 @@ fn main() {
 
         let mut stream = TcpStream::connect(master_url_with_port).unwrap();
 
-        let _ = stream.write_all(b"*1\r\n$4\r\nPING\r\n");
+        let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
 
+        let commands_to_send: [(&str, &str); 3] = [
+            ("*1\r\n$4\r\nPING\r\n", "+PONG\r\n"),
+            (replconf_second, "+OK\r\n"),
+            ("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", "+OK\r\n"),
+        ];
+
+        for i in 0..commands_to_send.len() {
+            let is_expected_response = helper::send_and_validate(
+                &mut stream,
+                commands_to_send[i].0,
+                commands_to_send[i].1
+            );
+
+            if !is_expected_response {
+                panic!("[DEBUG] exp_resp doesn't equal actual_resp");
+            }
+        }
+
+        println!("[INFO] sent all the commands");
     } else {
         role = "role:master";
     }
 
     let link = format!("127.0.0.1:{}", port);
-    
+
     println!("[INFO] starting server with port number: {}", port);
     let listener = TcpListener::bind(link).unwrap();
 
@@ -200,6 +220,12 @@ fn handle_connection(
 
                         let _ = stream.write_all(response.as_bytes());
                     }
+                }
+
+                "replconf" => {
+                    println!("[INFO]: replconf {:?}", elements_array);
+
+                    let _ = stream.write_all(b"+OK\r\n");
                 }
 
                 _ => {
