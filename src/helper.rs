@@ -23,6 +23,7 @@ pub fn handle_connection_as_slave(
             (no_of_elements, counter) = parse_number(bytes_received, counter);
 
             let mut elements_array = parsing_elements(bytes_received, counter, no_of_elements);
+            println!("[DEBUG] elements array for each replica: {:?}", elements_array);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "set" => {
@@ -114,8 +115,20 @@ pub fn handle_connection_as_slave(
 pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
 
+    println!("[DEBUG] {:?}", tcp_vec);
+    println!("[DEBUG] commands sent to slaves {:?}", String::from_utf8_lossy(payload));
+
     for stream in tcp_vec.iter_mut() {
-        let _ = stream.write_all(payload);
+        
+        match stream.write_all(payload) {
+            Ok(_) => {
+                println!("[INFO] command successfully sent to slaves");
+            }
+            Err(e) => {
+                
+                println!("[ERROR] error sending command to slaves");
+            }
+        }
     }
 }
 

@@ -86,9 +86,15 @@ fn main() {
                                 return;
                             }
                             Ok(n) => {
-                                helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                if role != "role:slave" {
+                                    helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                }
 
                                 if role == "role:slave" {
+                                    println!("[DEBUG] command received as slave: {:?}", String::from_utf8_lossy(&buffer[..n]));
+
+                                    
+
                                     stream = helper::handle_connection_as_slave(
                                         stream,
                                         &buffer[..n],
@@ -98,16 +104,16 @@ fn main() {
                                     );
 
                                     continue;
+                                } else {
+                                    stream = handle_connection(
+                                        &buffer,
+                                        stream,
+                                        &store_clone,
+                                        &main_list_clone,
+                                        role,
+                                        &mut is_connection_slave
+                                    );
                                 }
-
-                                stream = handle_connection(
-                                    &buffer,
-                                    stream,
-                                    &store_clone,
-                                    &main_list_clone,
-                                    role,
-                                    &mut is_connection_slave
-                                );
                             }
                             Err(e) => {
                                 println!("[ERROR] error reading stream: {e}");
