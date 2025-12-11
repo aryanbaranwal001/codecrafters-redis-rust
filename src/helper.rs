@@ -7,23 +7,30 @@ use crate::types;
 use crate::commands;
 
 // if expected response equals actual response, returns true
-pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp: &str) -> bool {
+pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option: Option<&str>) -> bool {
     let mut buffer = [0; 512];
 
     let _ = stream.write_all(command.as_bytes());
     match stream.read(&mut buffer) {
         Ok(n) => {
+            match exp_resp_option {
+                Some(exp_resp) => {
+                    let cow = String::from_utf8_lossy(&buffer[..n]);
+                    let act_resp: &str = &cow;
 
-            let cow = String::from_utf8_lossy(&buffer[..n]);
-            let act_resp: &str = &cow;
+                    println!("[DEBUG] exp resp: {:?}", exp_resp);
+                    println!("[DEBUG] actual resp: {:?}", act_resp);
 
-            println!("[DEBUG] exp resp: {:?}", exp_resp);
-            println!("[DEBUG] actual resp: {:?}", act_resp);
+                    if act_resp == exp_resp {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                }
 
-            if act_resp == exp_resp {
-                return true;
-            } else {
-                return false;
+                None => {
+                    return true;
+                }
             }
         }
         Err(_) => {}

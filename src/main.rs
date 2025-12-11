@@ -43,10 +43,11 @@ fn main() {
 
         let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
 
-        let commands_to_send: [(&str, &str); 3] = [
-            ("*1\r\n$4\r\nPING\r\n", "+PONG\r\n"),
-            (replconf_second, "+OK\r\n"),
-            ("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", "+OK\r\n"),
+        let commands_to_send: [(&str, Option<&str>); 4] = [
+            ("*1\r\n$4\r\nPING\r\n", Some("+PONG\r\n")),
+            (replconf_second, Some("+OK\r\n")),
+            ("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", Some("+OK\r\n")),
+            ("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n", None),
         ];
 
         for i in 0..commands_to_send.len() {
@@ -226,6 +227,10 @@ fn handle_connection(
                     println!("[INFO]: replconf {:?}", elements_array);
 
                     let _ = stream.write_all(b"+OK\r\n");
+                }
+
+                "psync" => {
+                    let _ = stream.write_all(b"+FULLRESYNC <REPL_ID> 0\r\n");
                 }
 
                 _ => {
