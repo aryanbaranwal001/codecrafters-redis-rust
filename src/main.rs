@@ -5,6 +5,8 @@ use std::sync::{ Arc, Condvar, Mutex };
 use std::{ fs, thread };
 use clap::Parser;
 
+use crate::helper::hand_shake;
+
 mod commands;
 mod helper;
 mod types;
@@ -37,32 +39,14 @@ fn main() {
         let (master_url, marter_port) = (s.next().unwrap(), s.next().unwrap());
         let master_url_with_port = format!("{}:{}", master_url, marter_port);
 
-        println!("[INFO] trying to connect with master with link: {}", master_url_with_port);
+        let mut stream = TcpStream::connect(&master_url_with_port).unwrap();
 
-        let mut stream = TcpStream::connect(master_url_with_port).unwrap();
+        println!("[INFO] connected with master with link: {}", master_url_with_port);
 
-        let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
-
-        let commands_to_send: [(&str, Option<&str>); 4] = [
-            ("*1\r\n$4\r\nPING\r\n", Some("+PONG\r\n")),
-            (replconf_second, Some("+OK\r\n")),
-            ("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", Some("+OK\r\n")),
-            ("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n", None),
-        ];
-
-        for i in 0..commands_to_send.len() {
-            let is_expected_response = helper::send_and_validate(
-                &mut stream,
-                commands_to_send[i].0,
-                commands_to_send[i].1
-            );
-
-            if !is_expected_response {
-                panic!("[DEBUG] exp_resp doesn't equal actual_resp");
-            }
-        }
-
-        println!("[INFO] sent all the commands");
+        // program will panic if handshake was not successful
+        hand_shake(&port, &mut stream);
+        
+        helper::replicate_all_write_commands();
     } else {
         role = "role:master";
     }

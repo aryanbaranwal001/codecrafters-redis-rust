@@ -6,6 +6,32 @@ use std::io::{ Read, Write };
 use crate::types;
 use crate::commands;
 
+pub fn replicate_all_write_commands() {
+    
+}
+
+pub fn hand_shake(port: &String, stream: &mut TcpStream) {
+    let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
+
+    let commands_to_send: [(&str, Option<&str>); 4] = [
+        ("*1\r\n$4\r\nPING\r\n", Some("+PONG\r\n")),
+        (replconf_second, Some("+OK\r\n")),
+        ("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", Some("+OK\r\n")),
+        ("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n", None),
+    ];
+
+    for i in 0..commands_to_send.len() {
+        // helper::
+        let is_expected_response = send_and_validate(stream, commands_to_send[i].0, commands_to_send[i].1);
+
+        if !is_expected_response {
+            panic!("[DEBUG] exp_resp doesn't equal actual_resp");
+        }
+    }
+
+    println!("[INFO] handshake done successfully");
+}
+
 // if expected response equals actual response, returns true
 pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option: Option<&str>) -> bool {
     let mut buffer = [0; 512];
