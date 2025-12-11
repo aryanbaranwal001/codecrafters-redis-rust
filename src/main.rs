@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
-use std::{ thread };
+use std::{ fs, thread };
 use clap::Parser;
 
 mod commands;
@@ -231,6 +231,13 @@ fn handle_connection(
 
                 "psync" => {
                     let _ = stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
+
+                    let rdb_file_bytes = fs::read("empty.rdb").unwrap();
+
+                    let header = format!("${}\r\n", rdb_file_bytes.len());
+                    let _ = stream.write_all(header.as_bytes());
+
+                    let _ = stream.write_all(&rdb_file_bytes);
                 }
 
                 _ => {

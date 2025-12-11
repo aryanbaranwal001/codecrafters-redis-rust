@@ -38,25 +38,21 @@ pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> St
 pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
-    if let Some(val) = map.get(&elements_array[1]) {
-        match val.expires_at {
-            Some(expire_time) => {
-                if Instant::now() >= expire_time {
-                    map.remove(&elements_array[1]);
-                    return "$-1\r\n".to_string();
-                } else {
-                }
+    let key = &elements_array[1];
+
+    if let Some(val) = map.get(key) {
+        if let Some(expire_time) = val.expires_at {
+            if Instant::now() >= expire_time {
+                map.remove(key);
+                return "$-1\r\n".to_string();
             }
-            None => {}
         }
 
         match &val.value {
             types::StoredValue::String(string_var) => {
-                let value_to_send = format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
-
-                value_to_send
+                return format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
             }
-            _ => { "FILLER STRING [GET]".to_string() }
+            _ => { "-ERR stored_value is not a string\r\n".to_string() }
         }
     } else {
         "$-1\r\n".to_string()
