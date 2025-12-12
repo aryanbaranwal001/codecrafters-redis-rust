@@ -78,20 +78,6 @@ pub fn handle_connection_as_slave(
                     let _ = commands::handle_incr(&mut elements_array, store);
                 }
 
-                // "multi" => {
-                //     commands::handle_multi(&mut stream, store, main_list_store);
-                // }
-
-                // discard without multi
-                // "discard" => {
-                //     let _ = stream.write_all(b"-ERR DISCARD without MULTI\r\n");
-                // }
-
-                // exec without multi
-                // "exec" => {
-                //     let _ = stream.write_all(b"-ERR EXEC without MULTI\r\n");
-                // }
-
                 "info" => {
                     if elements_array[1] == "replication" {
                         let data =

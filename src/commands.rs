@@ -3,7 +3,7 @@ use std::time::{ Duration, Instant, SystemTime, UNIX_EPOCH };
 use std::u64;
 use std::io::{ Write, Read };
 use crate::types::{ self };
-use crate::helper;
+use crate::{ helper };
 
 pub fn handle_echo(elements_array: Vec<String>) -> String {
     let value = &elements_array[1];
@@ -52,7 +52,9 @@ pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> St
             types::StoredValue::String(string_var) => {
                 return format!("${}\r\n{}\r\n", string_var.as_bytes().len(), string_var);
             }
-            _ => { "-ERR stored_value is not a string\r\n".to_string() }
+            _ => {
+                return "-ERR stored_value is not a string\r\n".to_string();
+            }
         }
     } else {
         "$-1\r\n".to_string()
@@ -60,34 +62,27 @@ pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> St
 }
 
 pub fn handle_rpush(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
-    println!("rpush getting triggered");
     let (main_list_guard, cvar) = &**main_list_store;
 
     let mut main_list = main_list_guard.lock().unwrap();
-    let data_to_send;
 
-    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        for i in 2..elements_array.len() {
-            inner.vec.push(elements_array[i].clone());
+    let list_name = &elements_array[1];
+    let list_elements = &elements_array[2..];
+
+    let s = main_list.iter_mut().find(|l| &l.name == list_name);
+
+    let list = match s {
+        Some(list) => { list }
+        None => {
+            main_list.push(types::List::new(&list_name));
+            main_list.last_mut().unwrap()
         }
+    };
 
-        println!("no of elements in list {}", inner.vec.len());
+    list.vec.extend(list_elements.iter().cloned());
 
-        data_to_send = format!(":{}\r\n", inner.vec.len());
-    } else {
-        let mut new_list = types::List::new(elements_array[1].as_str());
-
-        for i in 2..elements_array.len() {
-            new_list.vec.push(elements_array[i].clone());
-        }
-
-        data_to_send = format!(":{}\r\n", new_list.vec.len());
-        main_list.push(new_list);
-    }
     cvar.notify_one();
-
-    println!("logger::main_list => {:?}", main_list);
-    data_to_send
+    format!(":{}\r\n", list.vec.len())
 }
 
 pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
@@ -95,29 +90,22 @@ pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::Shared
 
     let mut main_list = main_list_guard.lock().unwrap();
 
-    let data_to_send;
+    let list_name = &elements_array[1];
+    let list_elements = &elements_array[2..];
 
-    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        for i in 2..elements_array.len() {
-            inner.vec.insert(0, elements_array[i].clone());
+    let s = main_list.iter_mut().find(|l| &l.name == list_name);
+
+    let list = match s {
+        Some(list) => { list }
+        None => {
+            main_list.push(types::List::new(&list_name));
+            main_list.last_mut().unwrap()
         }
+    };
 
-        println!("no of elements in list {}", inner.vec.len());
+    list.vec.splice(0..0, list_elements.iter().rev().cloned());
 
-        data_to_send = format!(":{}\r\n", inner.vec.len());
-    } else {
-        let mut new_list = types::List::new(elements_array[1].as_str());
-
-        for i in 2..elements_array.len() {
-            new_list.vec.insert(0, elements_array[i].clone());
-        }
-
-        data_to_send = format!(":{}\r\n", new_list.vec.len());
-        main_list.push(new_list);
-    }
-
-    println!("logger::main_list => {:?}", main_list);
-    data_to_send
+    format!(":{}\r\n", list.vec.len())
 }
 
 pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
@@ -125,6 +113,8 @@ pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::Share
     let mut main_list = main_list_guard.lock().unwrap();
 
     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
+        println!("[DEBUG] inner list {:?}", inner);
+
         let mut starting_index = elements_array[2].parse::<i32>().unwrap();
         let mut ending_index = elements_array[3].parse::<i32>().unwrap();
 

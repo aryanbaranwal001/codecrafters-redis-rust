@@ -87,13 +87,30 @@ fn main() {
                             }
                             Ok(n) => {
                                 if role != "role:slave" {
-                                    helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                    let mut counter = 0;
+                                    let no_of_elements;
+                                    (no_of_elements, counter) = helper::parse_number(&buffer[..n], counter);
+                                    let elements_array = helper::parsing_elements(
+                                        &buffer[..n],
+                                        counter,
+                                        no_of_elements
+                                    );
+
+                                    if
+                                        matches!(
+                                            elements_array[0].to_ascii_lowercase().as_str(),
+                                            "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
+                                        )
+                                    {
+                                        helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                    }
                                 }
 
                                 if role == "role:slave" {
-                                    println!("[DEBUG] command received as slave: {:?}", String::from_utf8_lossy(&buffer[..n]));
-
-                                    
+                                    println!(
+                                        "[DEBUG] command received as slave: {:?}",
+                                        String::from_utf8_lossy(&buffer[..n])
+                                    );
 
                                     stream = helper::handle_connection_as_slave(
                                         stream,
