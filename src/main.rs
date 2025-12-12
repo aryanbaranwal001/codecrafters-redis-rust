@@ -141,14 +141,7 @@ fn main() {
 
                                     continue;
                                 } else {
-                                    let mut counter = 0;
-                                    let no_of_elements;
-                                    (no_of_elements, counter) = helper::parse_number(&buffer[..n], counter);
-                                    let elements_array = helper::parsing_elements(
-                                        &buffer[..n],
-                                        counter,
-                                        no_of_elements
-                                    );
+                                    let elements_array = helper::get_elements_array(&buffer[..n]);
 
                                     if
                                         matches!(
@@ -193,14 +186,9 @@ fn handle_connection(
     role: &str,
     is_connection_slave: &mut bool
 ) -> TcpStream {
-    let mut counter = 0;
-
-    match bytes_received[counter] {
+    match bytes_received[0] {
         b'*' => {
-            let no_of_elements;
-            (no_of_elements, counter) = helper::parse_number(bytes_received, counter);
-
-            let mut elements_array = helper::parsing_elements(bytes_received, counter, no_of_elements);
+            let mut elements_array = helper::get_elements_array(bytes_received);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {

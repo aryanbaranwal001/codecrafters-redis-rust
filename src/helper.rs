@@ -7,13 +7,20 @@ use std::sync::{ Arc, Mutex };
 use crate::types;
 use crate::commands;
 
+pub fn get_elements_array(bytes_received: &[u8]) -> Vec<String> {
+    let mut counter = 0;
+    let no_of_elements;
+    (no_of_elements, counter) = parse_number(bytes_received, counter);
+    let elements_array = parsing_elements(bytes_received, counter, no_of_elements);
+    return elements_array;
+}
+
 pub fn handle_other_clients_as_slave(
     mut stream: TcpStream,
     bytes_received: &[u8],
     store: &types::SharedStore,
     // main_list_store: &types::SharedMainList,
     role: &str
-
 ) -> TcpStream {
     let mut counter = 0;
 
