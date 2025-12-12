@@ -139,6 +139,11 @@ pub fn handle_connection_as_slave_from_master(
                     }
                 }
 
+                "replconf" => {
+                    if elements_array[1] == "getack" {
+                        let _ = stream.write_all("*3\r\n$8\r\nreplconf\r\n$3\r\nack\r\n$1\r\n0\r\n".as_bytes());
+                    }
+                }
                 _ => {}
             }
         }
