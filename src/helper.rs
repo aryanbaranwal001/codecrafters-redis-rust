@@ -7,7 +7,49 @@ use std::sync::{ Arc, Mutex };
 use crate::types;
 use crate::commands;
 
-pub fn handle_connection_as_slave(
+pub fn handle_other_clients_as_slave(
+    mut stream: TcpStream,
+    bytes_received: &[u8],
+    store: &types::SharedStore,
+    // main_list_store: &types::SharedMainList,
+    role: &str
+
+) -> TcpStream {
+    let mut counter = 0;
+
+    match bytes_received[counter] {
+        b'*' => {
+            let no_of_elements;
+            (no_of_elements, counter) = parse_number(bytes_received, counter);
+
+            let elements_array = parsing_elements(bytes_received, counter, no_of_elements);
+            println!("[DEBUG] elements array from clients other than master: {:?}", elements_array);
+
+            match elements_array[0].to_ascii_lowercase().as_str() {
+                "get" => {
+                    let response = commands::handle_get(elements_array, store);
+                    let _ = stream.write_all(response.as_bytes());
+                }
+                "info" => {
+                    if elements_array[1] == "replication" {
+                        let data =
+                            format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
+
+                        let response = format!("${}\r\n{}\r\n", data.len(), data);
+
+                        let _ = stream.write_all(response.as_bytes());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        _ => {}
+    }
+    stream
+}
+
+pub fn handle_connection_as_slave_from_master(
     mut stream: TcpStream,
 
     bytes_received: &[u8],
@@ -23,11 +65,12 @@ pub fn handle_connection_as_slave(
             (no_of_elements, counter) = parse_number(bytes_received, counter);
 
             let mut elements_array = parsing_elements(bytes_received, counter, no_of_elements);
-            println!("[DEBUG] elements array for each replica: {:?}", elements_array);
+            println!("[DEBUG] elements array from master: {:?}", elements_array);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "set" => {
                     let _ = commands::handle_set(elements_array, store);
+                    println!("[DEBUG] set fn from master ran");
                 }
 
                 "get" => {
@@ -105,14 +148,12 @@ pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u
     println!("[DEBUG] commands sent to slaves {:?}", String::from_utf8_lossy(payload));
 
     for stream in tcp_vec.iter_mut() {
-        
         match stream.write_all(payload) {
             Ok(_) => {
                 println!("[INFO] command successfully sent to slaves");
             }
             Err(e) => {
-                
-                println!("[ERROR] error sending command to slaves");
+                println!("[ERROR] error sending command to slaves {e}");
             }
         }
     }

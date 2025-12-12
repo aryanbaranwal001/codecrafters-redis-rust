@@ -4,6 +4,7 @@ use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
 use std::{ fs, thread };
 use clap::Parser;
+use regex::Regex;
 
 mod commands;
 mod helper;
@@ -11,7 +12,6 @@ mod types;
 
 fn main() {
     let args = types::Args::parse();
-    let port;
     let role;
 
     println!("--------------------------------------------");
@@ -21,28 +21,69 @@ fn main() {
 
     //////////// HANDLING ARGUEMENTS ////////////
 
-    if let Some(port_num) = args.port {
-        port = format!("{}", port_num);
-        println!("[INFO] provided with port number: {}", port);
-    } else {
-        port = "6379".to_string();
-        println!("[INFO] not provided with port number, starting with default: 6379");
-    }
+    let port = args.port
+        .map(|p| {
+            println!("[INFO] port: {p}");
+            format!("{}", p)
+        })
+        .unwrap_or_else(|| {
+            println!("[INFO] port: 6379");
+            "6379".to_string()
+        });
 
     if let Some(replicaof_string) = args.replicaof {
         role = "role:slave";
 
-        // Trying to connect to master server
-        let mut s = replicaof_string.splitn(2, " ");
-        let (master_url, marter_port) = (s.next().unwrap(), s.next().unwrap());
-        let master_url_with_port = format!("{}:{}", master_url, marter_port);
+        // connect to master server
+        let (master_url, marter_port) = replicaof_string
+            .split_once(" ")
+            .expect("[ERROR] invalid format (expected: HOST PORT)");
+        let master_addr = format!("{master_url}:{marter_port}");
 
-        let mut stream = TcpStream::connect(&master_url_with_port).unwrap();
+        let mut stream = TcpStream::connect(&master_addr).unwrap();
+        println!("[INFO] connected with master with addr: {master_addr}");
 
-        println!("[INFO] connected with master with link: {}", master_url_with_port);
-
-        // program will panic if handshake was not successful
+        // program panics if handshake not successful
         helper::hand_shake(&port, &mut stream);
+
+        //////////// HANDLING CONNECTION WITH MASTER ////////////
+        let store_clone = Arc::clone(&store);
+        let main_list_clone = Arc::clone(&main_list);
+
+        thread::spawn(move || {
+            let mut buffer = [0; 512];
+
+            loop {
+                match stream.read(&mut buffer) {
+                    Ok(0) => {
+                        println!("[INFO] disconnected from master");
+                        return;
+                    }
+                    Ok(n) => {
+                        let data = String::from_utf8_lossy(&buffer[..n]);
+                        let re = Regex::new(r"\*[^*]+").unwrap();
+                        let commands: Vec<&str> = re
+                            .find_iter(&data)
+                            .map(|m| m.as_str())
+                            .collect();
+
+                        for i in 0..commands.len() {
+                            let bytes = commands[i].as_bytes();
+                            stream = helper::handle_connection_as_slave_from_master(
+                                stream,
+                                &bytes,
+                                &store_clone,
+                                &main_list_clone,
+                                role
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        println!("[ERROR] error reading stream: {e}");
+                    }
+                }
+            }
+        });
     } else {
         role = "role:master";
     }
@@ -50,10 +91,8 @@ fn main() {
     //////////// HANDLING CONNECTIONS ////////////
 
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
-
-    let link = format!("127.0.0.1:{}", port);
-
     println!("[INFO] starting server with port number: {}", port);
+    let link = format!("127.0.0.1:{}", port);
 
     let listener = TcpListener::bind(link).unwrap();
 
@@ -86,7 +125,22 @@ fn main() {
                                 return;
                             }
                             Ok(n) => {
-                                if role != "role:slave" {
+                                if role == "role:slave" {
+                                    println!(
+                                        "[DEBUG] command received as slave: {:?}",
+                                        String::from_utf8_lossy(&buffer[..n])
+                                    );
+
+                                    stream = helper::handle_other_clients_as_slave(
+                                        stream,
+                                        &buffer,
+                                        &store_clone,
+                                        role
+                                        // &main_list_clone,
+                                    );
+
+                                    continue;
+                                } else {
                                     let mut counter = 0;
                                     let no_of_elements;
                                     (no_of_elements, counter) = helper::parse_number(&buffer[..n], counter);
@@ -104,24 +158,7 @@ fn main() {
                                     {
                                         helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
                                     }
-                                }
 
-                                if role == "role:slave" {
-                                    println!(
-                                        "[DEBUG] command received as slave: {:?}",
-                                        String::from_utf8_lossy(&buffer[..n])
-                                    );
-
-                                    stream = helper::handle_connection_as_slave(
-                                        stream,
-                                        &buffer[..n],
-                                        &store_clone,
-                                        &main_list_clone,
-                                        role
-                                    );
-
-                                    continue;
-                                } else {
                                     stream = handle_connection(
                                         &buffer,
                                         stream,
