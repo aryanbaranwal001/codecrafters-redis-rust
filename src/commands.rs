@@ -8,8 +8,7 @@ use crate::{ helper };
 pub fn handle_echo(elements_array: Vec<String>) -> String {
     let value = &elements_array[1];
 
-    let response = format!("${}\r\n{}\r\n", value.len(), value);
-    return response;
+    return format!("${}\r\n{}\r\n", value.len(), value);
 }
 
 pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> String {
@@ -32,7 +31,7 @@ pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> St
 
     println!("[INFO] map after set command: {:?}", map);
 
-    "+OK\r\n".to_string()
+    return "+OK\r\n".to_string();
 }
 
 pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> String {
@@ -57,7 +56,7 @@ pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> St
             }
         }
     } else {
-        "$-1\r\n".to_string()
+        return "$-1\r\n".to_string();
     }
 }
 
@@ -82,7 +81,7 @@ pub fn handle_rpush(elements_array: Vec<String>, main_list_store: &types::Shared
     list.vec.extend(list_elements.iter().cloned());
 
     cvar.notify_one();
-    format!(":{}\r\n", list.vec.len())
+    return format!(":{}\r\n", list.vec.len());
 }
 
 pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
@@ -105,7 +104,7 @@ pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::Shared
 
     list.vec.splice(0..0, list_elements.iter().rev().cloned());
 
-    format!(":{}\r\n", list.vec.len())
+    return format!(":{}\r\n", list.vec.len());
 }
 
 pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
@@ -179,7 +178,7 @@ pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::Share
         }
     } else {
         // list doesn't exists
-        "*0\r\n".to_string()
+        return "*0\r\n".to_string();
     }
 }
 
