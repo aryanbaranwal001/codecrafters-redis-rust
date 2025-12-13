@@ -4,7 +4,6 @@ use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
 use std::{ fs, thread };
 use clap::Parser;
-use regex::Regex;
 
 mod commands;
 mod helper;
@@ -60,21 +59,24 @@ fn main() {
                         return;
                     }
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buffer[..n]);
-                        
-                        println!("[DEBUG] data {:?}", data);
-                        
-                        let re = Regex::new(r"\*[^*]+").unwrap();
-                        let commands: Vec<&str> = re
-                            .find_iter(&data)
-                            .map(|m| m.as_str())
-                            .collect();
+                        let buffer_checked = helper::check_for_rdb_file(&buffer[..n]);
 
-                        for i in 0..commands.len() {
-                            let bytes = commands[i].as_bytes();
+                        let mut commands_array: Vec<Vec<String>> = Vec::new();
+
+                        let mut counter = 0;
+                        while counter < buffer_checked.len() {
+                            let (elements_array, count) = helper::get_elements_array_with_counter(
+                                counter,
+                                &buffer_checked[counter..]
+                            );
+                            commands_array.push(elements_array);
+                            counter = count;
+                        }
+
+                        for i in 0..commands_array.len() {
                             stream = helper::handle_connection_as_slave_from_master(
                                 stream,
-                                &bytes,
+                                commands_array[i].clone(),
                                 &store_clone,
                                 &main_list_clone,
                                 role
@@ -129,11 +131,6 @@ fn main() {
                             }
                             Ok(n) => {
                                 if role == "role:slave" {
-                                    println!(
-                                        "[DEBUG] command received as slave: {:?}",
-                                        String::from_utf8_lossy(&buffer[..n])
-                                    );
-
                                     stream = helper::handle_other_clients_as_slave(
                                         stream,
                                         &buffer,
@@ -211,7 +208,6 @@ fn handle_connection(
                 "get" => {
                     let response = commands::handle_get(elements_array, store);
                     let _ = stream.write_all(response.as_bytes());
-                    println!("[DEBUG] xadd response: {:?}", response);
                 }
 
                 "rpush" => {

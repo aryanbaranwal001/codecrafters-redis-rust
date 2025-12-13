@@ -112,7 +112,6 @@ pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::Share
     let mut main_list = main_list_guard.lock().unwrap();
 
     if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-        println!("[DEBUG] inner list {:?}", inner);
 
         let mut starting_index = elements_array[2].parse::<i32>().unwrap();
         let mut ending_index = elements_array[3].parse::<i32>().unwrap();
@@ -591,7 +590,7 @@ pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_lis
 
                 (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
 
-                let cmd_array = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+                let (cmd_array,_) = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
 
                 if cmd_array[0].to_ascii_lowercase() == "exec" {
                     let response = helper::handle_exec_under_multi(&vector_of_commands, store, main_list_store);

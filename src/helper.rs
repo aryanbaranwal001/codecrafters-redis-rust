@@ -7,11 +7,37 @@ use std::sync::{ Arc, Mutex };
 use crate::types;
 use crate::commands;
 
+// pub fn split
+
+pub fn check_for_rdb_file(buffer: &[u8]) -> &[u8] {
+    let mut counter = 0;
+
+    if buffer.get(counter).unwrap() == &b'$' {
+        let (number, c) = parse_number(buffer, counter);
+        counter = c;
+        // jumps over bulk string at starting which is rdb file basically
+        // returns counter index at char immediately after rdb file ends
+        // rdb file ends with no \r\n
+        counter += number;
+
+        return &buffer[counter..];
+    } else {
+        return buffer;
+    }
+}
+
+pub fn get_elements_array_with_counter(starting_count: usize, bytes_received: &[u8]) -> (Vec<String>, usize) {
+    let mut counter = starting_count;
+    let no_of_elements;
+    (no_of_elements, counter) = parse_number(bytes_received, counter);
+    return parsing_elements(bytes_received, counter, no_of_elements);
+}
+
 pub fn get_elements_array(bytes_received: &[u8]) -> Vec<String> {
     let mut counter = 0;
     let no_of_elements;
     (no_of_elements, counter) = parse_number(bytes_received, counter);
-    let elements_array = parsing_elements(bytes_received, counter, no_of_elements);
+    let (elements_array, _) = parsing_elements(bytes_received, counter, no_of_elements);
     return elements_array;
 }
 
@@ -22,15 +48,9 @@ pub fn handle_other_clients_as_slave(
     // main_list_store: &types::SharedMainList,
     role: &str
 ) -> TcpStream {
-    let mut counter = 0;
-
-    match bytes_received[counter] {
+    match bytes_received[0] {
         b'*' => {
-            let no_of_elements;
-            (no_of_elements, counter) = parse_number(bytes_received, counter);
-
-            let elements_array = parsing_elements(bytes_received, counter, no_of_elements);
-            println!("[DEBUG] elements array from clients other than master: {:?}", elements_array);
+            let elements_array = get_elements_array(&bytes_received);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "get" => {
@@ -58,96 +78,83 @@ pub fn handle_other_clients_as_slave(
 
 pub fn handle_connection_as_slave_from_master(
     mut stream: TcpStream,
-
-    bytes_received: &[u8],
+    elements_array: Vec<String>,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
     role: &str
 ) -> TcpStream {
-    let mut counter = 0;
+    let mut elements_array = elements_array;
+    println!("[DEBUG] elements array from master: {:?}", elements_array);
 
-    match bytes_received[counter] {
-        b'*' => {
-            let no_of_elements;
-            (no_of_elements, counter) = parse_number(bytes_received, counter);
+    match elements_array[0].to_ascii_lowercase().as_str() {
+        "set" => {
+            let _ = commands::handle_set(elements_array, store);
+        }
 
-            let mut elements_array = parsing_elements(bytes_received, counter, no_of_elements);
-            println!("[DEBUG] elements array from master: {:?}", elements_array);
+        "get" => {
+            let _ = commands::handle_get(elements_array, store);
+        }
 
-            match elements_array[0].to_ascii_lowercase().as_str() {
-                "set" => {
-                    let _ = commands::handle_set(elements_array, store);
-                    println!("[DEBUG] set fn from master ran");
-                }
+        "rpush" => {
+            let _ = commands::handle_rpush(elements_array, main_list_store);
+        }
 
-                "get" => {
-                    let _ = commands::handle_get(elements_array, store);
-                }
+        "lpush" => {
+            let _ = commands::handle_lpush(elements_array, main_list_store);
+        }
 
-                "rpush" => {
-                    let _ = commands::handle_rpush(elements_array, main_list_store);
-                }
+        "lrange" => {
+            let _ = commands::handle_lrange(elements_array, main_list_store);
+        }
 
-                "lpush" => {
-                    let _ = commands::handle_lpush(elements_array, main_list_store);
-                }
+        "llen" => {
+            let _ = commands::handle_llen(elements_array, main_list_store);
+        }
 
-                "lrange" => {
-                    let _ = commands::handle_lrange(elements_array, main_list_store);
-                }
+        "lpop" => {
+            let _ = commands::handle_lpop(elements_array, main_list_store);
+        }
 
-                "llen" => {
-                    let _ = commands::handle_llen(elements_array, main_list_store);
-                }
+        "blpop" => {
+            let _ = commands::handle_blpop(elements_array, main_list_store);
+        }
 
-                "lpop" => {
-                    let _ = commands::handle_lpop(elements_array, main_list_store);
-                }
+        "type" => {
+            let _ = commands::handle_type(elements_array, store);
+        }
 
-                "blpop" => {
-                    let _ = commands::handle_blpop(elements_array, main_list_store);
-                }
+        "xadd" => {
+            let _ = commands::handle_xadd(&mut elements_array, store);
+        }
 
-                "type" => {
-                    let _ = commands::handle_type(elements_array, store);
-                }
+        "xrange" => {
+            let _ = commands::handle_xrange(&mut elements_array, store);
+        }
 
-                "xadd" => {
-                    let _ = commands::handle_xadd(&mut elements_array, store);
-                }
+        "xread" => {
+            let _ = commands::handle_xread(&mut elements_array, store);
+        }
 
-                "xrange" => {
-                    let _ = commands::handle_xrange(&mut elements_array, store);
-                }
+        "incr" => {
+            let _ = commands::handle_incr(&mut elements_array, store);
+        }
 
-                "xread" => {
-                    let _ = commands::handle_xread(&mut elements_array, store);
-                }
+        "info" => {
+            if elements_array[1] == "replication" {
+                let data =
+                    format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
 
-                "incr" => {
-                    let _ = commands::handle_incr(&mut elements_array, store);
-                }
+                let response = format!("${}\r\n{}\r\n", data.len(), data);
 
-                "info" => {
-                    if elements_array[1] == "replication" {
-                        let data =
-                            format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
-
-                        let response = format!("${}\r\n{}\r\n", data.len(), data);
-
-                        let _ = stream.write_all(response.as_bytes());
-                    }
-                }
-
-                "replconf" => {
-                    if elements_array[1] == "getack" {
-                        let _ = stream.write_all("*3\r\n$8\r\nreplconf\r\n$3\r\nack\r\n$1\r\n0\r\n".as_bytes());
-                    }
-                }
-                _ => {}
+                let _ = stream.write_all(response.as_bytes());
             }
         }
 
+        "replconf" => {
+            if elements_array[1].to_ascii_lowercase() == "getack" {
+                let _ = stream.write_all("*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n$1\r\n0\r\n".as_bytes());
+            }
+        }
         _ => {}
     }
     stream
@@ -155,9 +162,6 @@ pub fn handle_connection_as_slave_from_master(
 
 pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
-
-    println!("[DEBUG] {:?}", tcp_vec);
-    println!("[DEBUG] commands sent to slaves {:?}", String::from_utf8_lossy(payload));
 
     for stream in tcp_vec.iter_mut() {
         match stream.write_all(payload) {
@@ -186,7 +190,7 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) {
         let is_expected_response = send_and_validate(stream, commands_to_send[i].0, commands_to_send[i].1);
 
         if !is_expected_response {
-            panic!("[DEBUG] exp_resp doesn't equal actual_resp");
+            panic!("[ERROR] exp_resp doesn't equal actual_resp");
         }
     }
 
@@ -204,9 +208,6 @@ pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option:
                 Some(exp_resp) => {
                     let cow = String::from_utf8_lossy(&buffer[..n]);
                     let act_resp: &str = &cow;
-
-                    println!("[DEBUG] exp resp: {:?}", exp_resp);
-                    println!("[DEBUG] actual resp: {:?}", act_resp);
 
                     if act_resp == exp_resp {
                         return true;
@@ -378,6 +379,7 @@ pub fn handle_expiry(time_setter_args: &str, elements_array: Vec<String>) -> Opt
 }
 
 // counter must be at '$' or '*'
+// returned coutner is whatever is immediately after \r\n
 pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize) {
     let mut num_in_bytes: Vec<u8> = vec![];
 
@@ -405,7 +407,7 @@ pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize)
 }
 
 // get the elements in Vec<String> from resp
-pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_elements: usize) -> Vec<String> {
+pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_elements: usize) -> (Vec<String>, usize) {
     let mut elements_array: Vec<String> = Vec::new();
 
     for _ in 0..no_of_elements as u32 {
@@ -429,7 +431,7 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
     }
     println!("[INFO] elements array: {:?}", elements_array);
 
-    elements_array
+    (elements_array, counter)
 }
 
 // get starting and ending indexes
