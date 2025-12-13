@@ -151,9 +151,7 @@ pub fn handle_connection_as_slave_from_master(
         }
 
         "replconf" => {
-            println!("[DEBUG] replconf ran");
             if elements_array[1].to_ascii_lowercase() == "getack" {
-                println!("[DEBUG] getack ran");
                 let _ = stream.write_all("*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n$1\r\n0\r\n".as_bytes());
             }
         }
