@@ -48,7 +48,8 @@ fn main() {
         //////////// HANDLING CONNECTION WITH MASTER ////////////
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
-        println!("[INFO] ran 1");
+
+        let mut offset: usize = 0;
 
         thread::spawn(move || {
             let mut buffer = [0; 512];
@@ -60,10 +61,9 @@ fn main() {
                         return;
                     }
                     Ok(n) => {
-                        println!("[DEBUG] buffer unchecked: {:?}", String::from_utf8_lossy(&buffer[..n]));
                         let buffer_checked = helper::check_for_rdb_file(&buffer[..n]);
-
-                        let mut commands_array: Vec<Vec<String>> = Vec::new();
+                        println!("[DEBUG] buffer checked string: {:?}", String::from_utf8_lossy(&buffer_checked));
+                        println!("[DEBUG] buffer checked: bytes.len {:?}", &buffer_checked.len());
 
                         let mut counter = 0;
                         while counter < buffer_checked.len() {
@@ -71,19 +71,21 @@ fn main() {
                                 counter,
                                 &buffer_checked
                             );
-                            commands_array.push(elements_array);
+
+                            
+                            stream = helper::handle_connection_as_slave_from_master(
+                                stream,
+                                elements_array.clone(),
+                                &store_clone,
+                                &main_list_clone,
+                                role,
+                                offset
+                            );
+                            
+                            offset += count - counter;
                             counter = count;
                         }
 
-                        for i in 0..commands_array.len() {
-                            stream = helper::handle_connection_as_slave_from_master(
-                                stream,
-                                commands_array[i].clone(),
-                                &store_clone,
-                                &main_list_clone,
-                                role
-                            );
-                        }
                     }
                     Err(e) => {
                         println!("[ERROR] error reading stream: {e}");

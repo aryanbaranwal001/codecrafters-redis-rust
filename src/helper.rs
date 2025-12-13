@@ -81,7 +81,8 @@ pub fn handle_connection_as_slave_from_master(
     elements_array: Vec<String>,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
-    role: &str
+    role: &str,
+    offset: usize
 ) -> TcpStream {
     let mut elements_array = elements_array;
     println!("[DEBUG] elements array from master: {:?}", elements_array);
@@ -152,7 +153,9 @@ pub fn handle_connection_as_slave_from_master(
 
         "replconf" => {
             if elements_array[1].to_ascii_lowercase() == "getack" {
-                let _ = stream.write_all("*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n$1\r\n0\r\n".as_bytes());
+                let offset = format!("{}", offset);
+                let data = format!("*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n${}\r\n{}\r\n", offset.len(), offset);
+                let _ = stream.write_all(data.as_bytes());
             }
         }
         _ => {}
