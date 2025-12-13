@@ -316,10 +316,8 @@ fn handle_connection(
                 "wait" => {
                     let mut tcp_vec = tcpstream_vector_clone.lock().unwrap();
 
-                    if tcp_vec.len() == 0 {
-                        let data = format!(":{}\r\n", 0);
+                        let data = format!(":{}\r\n", tcp_vec.len());
                         let _ = stream.write_all(data.as_bytes());
-                    }
 
                 }
 
