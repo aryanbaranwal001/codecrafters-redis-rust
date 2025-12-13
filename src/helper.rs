@@ -150,9 +150,7 @@ pub fn handle_connection_as_slave_from_master(
             }
         }
 
-
         "replconf" => {
-
             println!("[DEBUG] replconf ran");
             if elements_array[1].to_ascii_lowercase() == "getack" {
                 println!("[DEBUG] getack ran");

@@ -48,6 +48,7 @@ fn main() {
         //////////// HANDLING CONNECTION WITH MASTER ////////////
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
+        println!("[INFO] ran 1");
 
         thread::spawn(move || {
             let mut buffer = [0; 512];
