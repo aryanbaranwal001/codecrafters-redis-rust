@@ -68,7 +68,7 @@ fn main() {
                         while counter < buffer_checked.len() {
                             let (elements_array, count) = helper::get_elements_array_with_counter(
                                 counter,
-                                &buffer_checked[counter..]
+                                &buffer_checked
                             );
                             commands_array.push(elements_array);
                             counter = count;
