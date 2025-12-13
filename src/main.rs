@@ -72,7 +72,6 @@ fn main() {
                                 &buffer_checked
                             );
 
-                            
                             stream = helper::handle_connection_as_slave_from_master(
                                 stream,
                                 elements_array.clone(),
@@ -81,11 +80,10 @@ fn main() {
                                 role,
                                 offset
                             );
-                            
+
                             offset += count - counter;
                             counter = count;
                         }
-
                     }
                     Err(e) => {
                         println!("[ERROR] error reading stream: {e}");
@@ -162,7 +160,8 @@ fn main() {
                                         &store_clone,
                                         &main_list_clone,
                                         role,
-                                        &mut is_connection_slave
+                                        &mut is_connection_slave,
+                                        &tcpstream_vector_clone
                                     );
                                 }
                             }
@@ -188,7 +187,8 @@ fn handle_connection(
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
     role: &str,
-    is_connection_slave: &mut bool
+    is_connection_slave: &mut bool,
+    tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -311,6 +311,16 @@ fn handle_connection(
                     let _ = stream.write_all(&rdb_file_bytes);
 
                     *is_connection_slave = true;
+                }
+
+                "wait" => {
+                    let mut tcp_vec = tcpstream_vector_clone.lock().unwrap();
+
+                    if tcp_vec.len() == 0 {
+                        let data = format!(":{}\r\n", 0);
+                        let _ = stream.write_all(data.as_bytes());
+                    }
+
                 }
 
                 _ => {
