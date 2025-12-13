@@ -59,6 +59,7 @@ fn main() {
                         return;
                     }
                     Ok(n) => {
+                        println!("[DEBUG] buffer unchecked: {:?}", String::from_utf8_lossy(&buffer[..n]));
                         let buffer_checked = helper::check_for_rdb_file(&buffer[..n]);
 
                         let mut commands_array: Vec<Vec<String>> = Vec::new();
