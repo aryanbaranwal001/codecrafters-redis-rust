@@ -61,6 +61,9 @@ fn main() {
                     }
                     Ok(n) => {
                         let data = String::from_utf8_lossy(&buffer[..n]);
+                        
+                        println!("[DEBUG] data {:?}", data);
+                        
                         let re = Regex::new(r"\*[^*]+").unwrap();
                         let commands: Vec<&str> = re
                             .find_iter(&data)
