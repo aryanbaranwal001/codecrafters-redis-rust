@@ -59,9 +59,7 @@ fn main() {
                             "[DEBUG] [SLAVE] buffer checked string: {:?}",
                             String::from_utf8_lossy(&buffer_checked)
                         );
-                        println!(
-                            "-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n"
-                        );
+                
                         println!("[DEBUG] [SLAVE] buffer checked: bytes.len {:?}", &buffer_checked.len());
 
                         let mut counter = 0;
@@ -96,6 +94,7 @@ fn main() {
 
     //////////// HANDLING CONNECTIONS ////////////
 
+    let master_repl_offset = Arc::new(Mutex::new(0usize));
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     println!("[INFO] {} server with port number: {}", role, port);
     let link = format!("127.0.0.1:{}", port);
@@ -106,7 +105,8 @@ fn main() {
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
-        let mut master_offset = 0;
+        let master_repl_offset_clone = Arc::clone(&master_repl_offset);
+
         let mut is_connection_slave: bool = false;
 
         let port_clone = port.clone();
@@ -116,15 +116,13 @@ fn main() {
                     println!("[INFO] accepted new connection");
 
                     let mut buffer = [0; 512];
-                    let mut already_ran = false;
 
                     loop {
-                        if is_connection_slave && !already_ran {
+                        if is_connection_slave {
                             let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
-
                             tcp_vecc.push(stream.try_clone().unwrap());
-                            already_ran = true;
                             println!("[DEBUG] vec_stream_slaves {:?}", tcp_vecc);
+                            return;
                         }
 
                         match stream.read(&mut buffer) {
@@ -157,7 +155,7 @@ fn main() {
                                             &buffer[..n],
                                             &port_clone.clone()
                                         );
-                                        master_offset += &buffer[..n].len();
+                                        *master_repl_offset_clone.lock().unwrap() += buffer[..n].len();
                                     }
 
                                     stream = handle_connection(
@@ -168,7 +166,7 @@ fn main() {
                                         role,
                                         &mut is_connection_slave,
                                         &tcpstream_vector_clone,
-                                        master_offset
+                                        Arc::clone(&master_repl_offset_clone)
                                     );
                                 }
                             }
@@ -196,7 +194,7 @@ fn handle_connection(
     role: &str,
     is_connection_slave: &mut bool,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
-    master_offset: usize
+    master_repl_offset: Arc<Mutex<usize>>
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -303,8 +301,11 @@ fn handle_connection(
                 }
 
                 "replconf" => {
-                    println!("[INFO]: replconf {:?}", elements_array);
-
+             
+                    if elements_array.len() >= 2 && elements_array[1].eq_ignore_ascii_case("ack") {
+            
+                        return stream;
+                    }
                     let _ = stream.write_all(b"+OK\r\n");
                 }
 
@@ -322,99 +323,97 @@ fn handle_connection(
                 }
 
                 "wait" => {
-                    let tcp_vec = tcpstream_vector_clone.lock().unwrap();
-                    let command = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
-                    let streams: Vec<TcpStream> = tcp_vec
-                        .iter()
-                        .map(|stream| stream.try_clone().unwrap())
-                        .collect();
-                    let replicas_count: Arc<(Mutex<u32>, Condvar)> = Arc::new((Mutex::new(0), Condvar::new()));
+                    let replica_needed: usize = elements_array[1].parse().unwrap();
+                    let timeout_ms: u64 = elements_array[2].parse().unwrap();
 
-                    let replica_needed: u32 = elements_array[1].parse().unwrap();
-                    let timeout: u32 = elements_array[2].parse().unwrap();
+    
+                    let streams: Vec<TcpStream> = {
+                        let guard = tcpstream_vector_clone.lock().unwrap();
+                        guard
+                            .iter()
+                            .map(|s| s.try_clone().unwrap())
+                            .collect()
+                    };
 
-                    //////////// SENDING REPLCONF COMMAND TO SLAVES ////////////
+                    let master_offset = *master_repl_offset.lock().unwrap();
 
-                    println!("[DEBUG] no of slaves: {}", streams.len());
+                    let initial_synced = streams.len(); // replicas already connected & synced
 
-                    for mut slave_stream in streams {
-                        let replicas_count_clone = Arc::clone(&replicas_count);
+                    let state = Arc::new((Mutex::new(initial_synced), Condvar::new()));
+
+                    let getack_cmd = b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+
+                    let streams_len = streams.len();
+
+                    for mut slave in streams {
+                        let state_clone = Arc::clone(&state);
 
                         thread::spawn(move || {
-                            let (guard, cvar) = &*replicas_count_clone;
-                            let mut replicas_count = guard.lock().unwrap();
+                            let (lock, cvar) = &*state_clone;
 
-                            let mut buffer = [0; 512];
+                    
+                            if slave.write_all(getack_cmd).is_err() {
+                                return;
+                            }
 
-                            match slave_stream.write_all(command.as_bytes()) {
-                                Ok(_) => {
-                                    println!("[INFO] replconf command successfully sent to slave: {:?}", slave_stream);
-                                    println!("[INFO] replconf command sent: {:?}", command);
+                            let mut buf = [0u8; 512];
 
-                                    loop {
-                                        match slave_stream.read(&mut buffer) {
-                                            Ok(n) => {
-                                                println!(
-                                                    "[DEBUG] sending cmds to slaves for loop | reponse from slave: {:?}",
-                                                    String::from_utf8_lossy(&buffer[..n])
-                                                );
-                                                let elements_array = helper::get_elements_array(&buffer[..n]);
+                            loop {
+                                match slave.read(&mut buf) {
+                                    Ok(0) => {
+                                        return;
+                                    }
+                                    Ok(n) => {
+                                        let elems = helper::get_elements_array(&buf[..n]);
 
-                                                let slave_offset = elements_array[2].parse().unwrap();
+                                  
+                                        if
+                                            elems.len() >= 3 &&
+                                            elems[0].eq_ignore_ascii_case("replconf") &&
+                                            elems[1].eq_ignore_ascii_case("ack")
+                                        {
+                                            if let Ok(replica_offset) = elems[2].parse::<usize>() {
+                                                if replica_offset >= master_offset {
+                                                    let mut count = lock.lock().unwrap();
 
-                                                if master_offset == slave_offset {
-                                                    *replicas_count += 1;
-                                                    cvar.notify_one();
-                                                    break;
+                                                    if *count < streams_len {
+                                                        *count += 1;
+                                                        cvar.notify_one();
+                                                    }
+
+                                                    return;
                                                 }
                                             }
-                                            Err(_) => {}
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    println!("[ERROR] error sending replconf command to slave {e}");
+                                    Err(_) => {
+                                        return;
+                                    }
                                 }
                             }
                         });
                     }
 
-                    //////////// MANAGING TIMEOUT ////////////
+          
+                    let (lock, cvar) = &*state;
+                    let mut count = lock.lock().unwrap();
 
-                    let replicas_count_clone = Arc::clone(&replicas_count);
+                    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
 
-                    let mut stream_1 = stream.try_clone().unwrap();
+                    while Instant::now() < deadline {
+                        let timeout = deadline - Instant::now();
+                        let (new_count, wait_res) = cvar.wait_timeout(count, timeout).unwrap();
+                        count = new_count;
 
-                    thread::spawn(move || {
-                        let (guard, cvar) = &*replicas_count_clone;
-                        let mut replicas_no = guard.lock().unwrap();
-
-                        let mut time_remainig = Duration::from_millis(timeout as u64);
-
-                        loop {
-                            let now_1 = Instant::now();
-
-                            if *replicas_no >= replica_needed {
-                                let data = format!(":{}\r\n", *replicas_no);
-                                let _ = stream_1.write_all(data.as_bytes());
-                                break;
-                            }
-
-                            let (new_guard, timeout_result) = cvar.wait_timeout(replicas_no, time_remainig).unwrap();
-
-                            replicas_no = new_guard;
-
-                            if timeout_result.timed_out() {
-                                let data = format!(":{}\r\n", *replicas_no);
-                                let _ = stream_1.write_all(data.as_bytes());
-                                break;
-                            }
-
-                            let now_2 = Instant::now();
-
-                            time_remainig -= now_2 - now_1;
+                        if wait_res.timed_out() {
+                            break;
                         }
-                    });
+                    }
+
+                    let result = (*count).min(replica_needed);
+                    let response = format!(":{}\r\n", result);
+
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 _ => {
