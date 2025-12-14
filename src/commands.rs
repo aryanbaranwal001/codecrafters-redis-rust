@@ -29,8 +29,6 @@ pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> St
 
     map.insert(key.clone(), value_entry);
 
-    println!("[INFO] map after set command: {:?}", map);
-
     return "+OK\r\n".to_string();
 }
 

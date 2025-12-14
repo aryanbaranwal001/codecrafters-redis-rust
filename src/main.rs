@@ -21,15 +21,7 @@ fn main() {
 
     //////////// HANDLING ARGUEMENTS ////////////
 
-    let port = args.port
-        .map(|p| {
-            println!("[INFO] port: {p}");
-            format!("{}", p)
-        })
-        .unwrap_or_else(|| {
-            println!("[INFO] port: 6379");
-            "6379".to_string()
-        });
+    let port = args.port.map(|p| { format!("{}", p) }).unwrap_or_else(|| { "6379".to_string() });
 
     if let Some(replicaof_string) = args.replicaof {
         role = "role:slave";
@@ -37,14 +29,14 @@ fn main() {
         // connect to master server
         let (master_url, marter_port) = replicaof_string
             .split_once(" ")
-            .expect("[ERROR] invalid format (expected: HOST PORT)");
+            .expect("[ERROR] [SLAVE] invalid format (expected: HOST PORT)");
         let master_addr = format!("{master_url}:{marter_port}");
 
-        let mut stream = TcpStream::connect(&master_addr).unwrap();
-        println!("[INFO] connected with master with addr: {master_addr}");
+        let mut master_stream = TcpStream::connect(&master_addr).unwrap();
+        println!("[INFO] [SLAVE] connected with master with addr: {master_addr}");
 
         // program panics if handshake not successful
-        helper::hand_shake(&port, &mut stream);
+        helper::hand_shake(&port, &mut master_stream);
 
         //////////// HANDLING CONNECTION WITH MASTER ////////////
         let store_clone = Arc::clone(&store);
@@ -56,15 +48,21 @@ fn main() {
             let mut buffer = [0; 512];
 
             loop {
-                match stream.read(&mut buffer) {
+                match master_stream.read(&mut buffer) {
                     Ok(0) => {
-                        println!("[INFO] disconnected from master");
+                        println!("[INFO] [SLAVE] disconnected from master");
                         return;
                     }
                     Ok(n) => {
                         let buffer_checked = helper::check_for_rdb_file(&buffer[..n]);
-                        println!("[DEBUG] buffer checked string: {:?}", String::from_utf8_lossy(&buffer_checked));
-                        println!("[DEBUG] buffer checked: bytes.len {:?}", &buffer_checked.len());
+                        println!(
+                            "[DEBUG] [SLAVE] buffer checked string: {:?}",
+                            String::from_utf8_lossy(&buffer_checked)
+                        );
+                        println!(
+                            "-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n-----------------------------------------------\n"
+                        );
+                        println!("[DEBUG] [SLAVE] buffer checked: bytes.len {:?}", &buffer_checked.len());
 
                         let mut counter = 0;
                         while counter < buffer_checked.len() {
@@ -73,8 +71,8 @@ fn main() {
                                 &buffer_checked
                             );
 
-                            stream = helper::handle_connection_as_slave_from_master(
-                                stream,
+                            master_stream = helper::handle_connection_as_slave_from_master(
+                                master_stream,
                                 elements_array.clone(),
                                 &store_clone,
                                 &main_list_clone,
@@ -87,7 +85,7 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        println!("[ERROR] error reading stream: {e}");
+                        println!("[ERROR] [SLAVE] error reading stream: {e}");
                     }
                 }
             }
@@ -99,7 +97,7 @@ fn main() {
     //////////// HANDLING CONNECTIONS ////////////
 
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
-    println!("[INFO] starting server with port number: {}", port);
+    println!("[INFO] {} server with port number: {}", role, port);
     let link = format!("127.0.0.1:{}", port);
 
     let listener = TcpListener::bind(link).unwrap();
@@ -111,6 +109,7 @@ fn main() {
         let mut master_offset = 0;
         let mut is_connection_slave: bool = false;
 
+        let port_clone = port.clone();
         thread::spawn(move || {
             match connection {
                 Ok(mut stream) => {
@@ -125,6 +124,7 @@ fn main() {
 
                             tcp_vecc.push(stream.try_clone().unwrap());
                             already_ran = true;
+                            println!("[DEBUG] vec_stream_slaves {:?}", tcp_vecc);
                         }
 
                         match stream.read(&mut buffer) {
@@ -152,7 +152,11 @@ fn main() {
                                             "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
                                         )
                                     {
-                                        helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                        helper::handle_slaves(
+                                            &tcpstream_vector_clone,
+                                            &buffer[..n],
+                                            &port_clone.clone()
+                                        );
                                         master_offset += &buffer[..n].len();
                                     }
 
@@ -331,6 +335,8 @@ fn handle_connection(
 
                     //////////// SENDING REPLCONF COMMAND TO SLAVES ////////////
 
+                    println!("[DEBUG] no of slaves: {}", streams.len());
+
                     for mut slave_stream in streams {
                         let replicas_count_clone = Arc::clone(&replicas_count);
 
@@ -342,25 +348,33 @@ fn handle_connection(
 
                             match slave_stream.write_all(command.as_bytes()) {
                                 Ok(_) => {
-                                    println!("[INFO] replconf command successfully sent to slaves");
-                                }
-                                Err(e) => {
-                                    println!("[ERROR] error sending replconf command to slaves {e}");
-                                }
-                            }
+                                    println!("[INFO] replconf command successfully sent to slave: {:?}", slave_stream);
+                                    println!("[INFO] replconf command sent: {:?}", command);
 
-                            match slave_stream.read(&mut buffer) {
-                                Ok(n) => {
-                                    let elements_array = helper::get_elements_array(&buffer[..n]);
+                                    loop {
+                                        match slave_stream.read(&mut buffer) {
+                                            Ok(n) => {
+                                                println!(
+                                                    "[DEBUG] sending cmds to slaves for loop | reponse from slave: {:?}",
+                                                    String::from_utf8_lossy(&buffer[..n])
+                                                );
+                                                let elements_array = helper::get_elements_array(&buffer[..n]);
 
-                                    let slave_offset = elements_array[2].parse().unwrap();
+                                                let slave_offset = elements_array[2].parse().unwrap();
 
-                                    if master_offset == slave_offset {
-                                        *replicas_count += 1;
-                                        cvar.notify_one();
+                                                if master_offset == slave_offset {
+                                                    *replicas_count += 1;
+                                                    cvar.notify_one();
+                                                    break;
+                                                }
+                                            }
+                                            Err(_) => {}
+                                        }
                                     }
                                 }
-                                Err(_) => {}
+                                Err(e) => {
+                                    println!("[ERROR] error sending replconf command to slave {e}");
+                                }
                             }
                         });
                     }

@@ -164,16 +164,17 @@ pub fn handle_connection_as_slave_from_master(
     stream
 }
 
-pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
+pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8], port: &String) {
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
 
     for stream in tcp_vec.iter_mut() {
         match stream.write_all(payload) {
             Ok(_) => {
-                println!("[INFO] command successfully sent to slaves");
+                println!("[INFO] [MASTER] command sent to slave PORT {} STREAM {:?}", port, stream);
+                println!("[INFO] [MASTER] command sent to slave {:?}", String::from_utf8_lossy(&payload));
             }
             Err(e) => {
-                println!("[ERROR] error sending command to slaves {e}");
+                println!("[ERROR] [MASTER] error sending command to slaves {e}");
             }
         }
     }
@@ -194,11 +195,11 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) {
         let is_expected_response = send_and_validate(stream, commands_to_send[i].0, commands_to_send[i].1);
 
         if !is_expected_response {
-            panic!("[ERROR] exp_resp doesn't equal actual_resp");
+            panic!("[ERROR] [SLAVE] exp_resp doesn't equal actual_resp");
         }
     }
 
-    println!("[INFO] handshake done successfully");
+    println!("[INFO] [SLAVE] handshake done successfully");
 }
 
 // if expected response equals actual response, returns true
