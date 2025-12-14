@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::sync::{ Arc, Condvar, Mutex };
-use std::{ fs, thread };
+use std::time::{ Duration, Instant };
+use std::{ fs, thread, u64 };
 use clap::Parser;
 
 mod commands;
@@ -107,7 +108,7 @@ fn main() {
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
-
+        let mut master_offset = 0;
         let mut is_connection_slave: bool = false;
 
         thread::spawn(move || {
@@ -152,6 +153,7 @@ fn main() {
                                         )
                                     {
                                         helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                        master_offset += &buffer[..n].len();
                                     }
 
                                     stream = handle_connection(
@@ -161,7 +163,8 @@ fn main() {
                                         &main_list_clone,
                                         role,
                                         &mut is_connection_slave,
-                                        &tcpstream_vector_clone
+                                        &tcpstream_vector_clone,
+                                        master_offset
                                     );
                                 }
                             }
@@ -188,7 +191,8 @@ fn handle_connection(
     main_list_store: &types::SharedMainList,
     role: &str,
     is_connection_slave: &mut bool,
-    tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>
+    tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
+    master_offset: usize
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -314,11 +318,89 @@ fn handle_connection(
                 }
 
                 "wait" => {
-                    let mut tcp_vec = tcpstream_vector_clone.lock().unwrap();
+                    let tcp_vec = tcpstream_vector_clone.lock().unwrap();
+                    let command = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+                    let streams: Vec<TcpStream> = tcp_vec
+                        .iter()
+                        .map(|stream| stream.try_clone().unwrap())
+                        .collect();
+                    let replicas_count: Arc<(Mutex<u32>, Condvar)> = Arc::new((Mutex::new(0), Condvar::new()));
 
-                        let data = format!(":{}\r\n", tcp_vec.len());
-                        let _ = stream.write_all(data.as_bytes());
+                    let replica_needed: u32 = elements_array[1].parse().unwrap();
+                    let timeout: u32 = elements_array[2].parse().unwrap();
 
+                    //////////// SENDING REPLCONF COMMAND TO SLAVES ////////////
+
+                    for mut slave_stream in streams {
+                        let replicas_count_clone = Arc::clone(&replicas_count);
+
+                        thread::spawn(move || {
+                            let (guard, cvar) = &*replicas_count_clone;
+                            let mut replicas_count = guard.lock().unwrap();
+
+                            let mut buffer = [0; 512];
+
+                            match slave_stream.write_all(command.as_bytes()) {
+                                Ok(_) => {
+                                    println!("[INFO] replconf command successfully sent to slaves");
+                                }
+                                Err(e) => {
+                                    println!("[ERROR] error sending replconf command to slaves {e}");
+                                }
+                            }
+
+                            match slave_stream.read(&mut buffer) {
+                                Ok(n) => {
+                                    let elements_array = helper::get_elements_array(&buffer[..n]);
+
+                                    let slave_offset = elements_array[2].parse().unwrap();
+
+                                    if master_offset == slave_offset {
+                                        *replicas_count += 1;
+                                        cvar.notify_one();
+                                    }
+                                }
+                                Err(_) => {}
+                            }
+                        });
+                    }
+
+                    //////////// MANAGING TIMEOUT ////////////
+
+                    let replicas_count_clone = Arc::clone(&replicas_count);
+
+                    let mut stream_1 = stream.try_clone().unwrap();
+
+                    thread::spawn(move || {
+                        let (guard, cvar) = &*replicas_count_clone;
+                        let mut replicas_no = guard.lock().unwrap();
+
+                        let mut time_remainig = Duration::from_millis(timeout as u64);
+
+                        loop {
+                            let now_1 = Instant::now();
+
+                            if *replicas_no >= replica_needed {
+                                let data = format!(":{}\r\n", *replicas_no);
+                                let _ = stream_1.write_all(data.as_bytes());
+                                break;
+                            }
+
+                            let (new_guard, timeout_result) = cvar.wait_timeout(replicas_no, time_remainig).unwrap();
+
+                            replicas_no = new_guard;
+
+                            if timeout_result.timed_out() {
+                                let data = format!(":{}\r\n", *replicas_no);
+                                let _ = stream_1.write_all(data.as_bytes());
+                                break;
+                            }
+
+                            let now_2 = Instant::now();
+
+                            time_remainig -= now_2 - now_1;
+                        }
+                    });
                 }
 
                 _ => {
@@ -331,5 +413,6 @@ fn handle_connection(
             let _ = stream.write_all(b"invalid resp string");
         }
     }
+
     stream
 }

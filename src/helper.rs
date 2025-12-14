@@ -85,7 +85,8 @@ pub fn handle_connection_as_slave_from_master(
     offset: usize
 ) -> TcpStream {
     let mut elements_array = elements_array;
-    println!("[DEBUG] elements array from master: {:?}", elements_array);
+
+    println!("[DEBUG] elements array from master as slave: {:?}", elements_array);
 
     match elements_array[0].to_ascii_lowercase().as_str() {
         "set" => {
