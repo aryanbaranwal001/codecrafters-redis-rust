@@ -23,26 +23,23 @@ pub fn skip_rdb_if_present(buf: &[u8]) -> &[u8] {
     return &buf[offset..];
 }
 
+/// get elements array with offset after parsing resp string
 pub fn get_elements_array_with_counter(starting_count: usize, bytes_received: &[u8]) -> (Vec<String>, usize) {
-    let mut offset = starting_count;
-    let no_of_elements;
-    (no_of_elements, offset) = parse_number(bytes_received, offset);
+    let (no_of_elements, offset) = parse_number(bytes_received, starting_count);
     return parsing_elements(bytes_received, offset, no_of_elements);
 }
 
+/// get elements array from resp string
 pub fn get_elements_array(bytes_received: &[u8]) -> Vec<String> {
-    let mut offset = 0;
-    let no_of_elements;
-    (no_of_elements, offset) = parse_number(bytes_received, offset);
-    let (elements_array, _) = parsing_elements(bytes_received, offset, no_of_elements);
-    return elements_array;
+    let (no_of_elements, offset) = parse_number(bytes_received, 0);
+    return parsing_elements(bytes_received, offset, no_of_elements).0;
 }
 
+/// handle connections other than master as slave
 pub fn handle_other_clients_as_slave(
     mut stream: TcpStream,
     bytes_received: &[u8],
     store: &types::SharedStore,
-    // main_list_store: &types::SharedMainList,
     role: &str
 ) -> TcpStream {
     match bytes_received[0] {
@@ -73,7 +70,8 @@ pub fn handle_other_clients_as_slave(
     stream
 }
 
-pub fn handle_connection_as_slave_from_master(
+/// handle connection with master as slave
+pub fn handle_connection_as_slave_with_master(
     mut stream: TcpStream,
     elements_array: Vec<String>,
     store: &types::SharedStore,
@@ -83,7 +81,7 @@ pub fn handle_connection_as_slave_from_master(
 ) -> TcpStream {
     let mut elements_array = elements_array;
 
-    println!("[INFO] elements array from master as slave: {:?}", elements_array);
+    println!("[INFO] elements array received from master as slave: {:?}", elements_array);
 
     match elements_array[0].to_ascii_lowercase().as_str() {
         "set" => {
@@ -161,6 +159,7 @@ pub fn handle_connection_as_slave_from_master(
     stream
 }
 
+/// write all the state changing commands to all the slaves/replicas
 pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
 
@@ -170,12 +169,13 @@ pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u
                 println!("[INFO] [MASTER] command sent to slave {:?}", String::from_utf8_lossy(&payload));
             }
             Err(e) => {
-                println!("[ERROR] [MASTER] error sending command to slaves {e}");
+                println!("[ERROR] [MASTER] error sending command to slaves: {e}");
             }
         }
     }
 }
 
+/// completing and securing connection from slave with master
 pub fn hand_shake(port: &String, stream: &mut TcpStream) {
     let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
 
@@ -187,7 +187,6 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) {
     ];
 
     for i in 0..commands_to_send.len() {
-        // helper::
         let is_expected_response = send_and_validate(stream, commands_to_send[i].0, commands_to_send[i].1);
 
         if !is_expected_response {
@@ -198,7 +197,8 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) {
     println!("[INFO] [SLAVE] handshake done successfully");
 }
 
-// if expected response equals actual response, returns true
+/// if expected response equals actual response, returns true
+/// helper function for handshake function
 pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option: Option<&str>) -> bool {
     let mut buffer = [0; 512];
 
@@ -207,8 +207,7 @@ pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option:
         Ok(n) => {
             match exp_resp_option {
                 Some(exp_resp) => {
-                    let cow = String::from_utf8_lossy(&buffer[..n]);
-                    let act_resp: &str = &cow;
+                    let act_resp: &str = &String::from_utf8_lossy(&buffer[..n]);
 
                     if act_resp == exp_resp {
                         return true;
@@ -228,6 +227,9 @@ pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option:
     return false;
 }
 
+/// runs the queued commands in FIFO basis
+/// collect all the responses
+/// return response array
 pub fn handle_exec_under_multi(
     vector_of_commands: &Vec<Vec<String>>,
     store: &types::SharedStore,
@@ -235,7 +237,6 @@ pub fn handle_exec_under_multi(
 ) -> String {
     if vector_of_commands.len() == 0 {
         return "*0\r\n".to_string();
-    } else {
     }
 
     let mut response_array = format!("*{}\r\n", vector_of_commands.len());
@@ -248,6 +249,8 @@ pub fn handle_exec_under_multi(
     return response_array;
 }
 
+/// execute all the commands queuing after EXE command
+/// returns response of each command
 fn handle_exec_commands<'a>(
     elements_array: Vec<String>,
     store: &types::SharedStore,
@@ -259,6 +262,7 @@ fn handle_exec_commands<'a>(
         "echo" => { commands::handle_echo(elements_array) }
 
         "ping" => { "+PONG\r\n".to_string() }
+
         "set" => { commands::handle_set(elements_array, store) }
 
         "get" => { commands::handle_get(elements_array, store) }

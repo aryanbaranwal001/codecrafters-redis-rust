@@ -581,6 +581,7 @@ pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_lis
         match stream.read(&mut multi_cmd_buffer) {
             Ok(0) => {
                 println!("[INFO] connection disconnected");
+                return;
             }
             Ok(_n) => {
                 let mut counter = 0;

@@ -63,7 +63,7 @@ fn main() {
                                 &buffer_checked
                             );
 
-                            master_stream = helper::handle_connection_as_slave_from_master(
+                            master_stream = helper::handle_connection_as_slave_with_master(
                                 master_stream,
                                 elements_array.clone(),
                                 &store_clone,
