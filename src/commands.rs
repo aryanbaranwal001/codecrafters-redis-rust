@@ -106,76 +106,54 @@ pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::Shared
 }
 
 pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
-    let (main_list_guard, _) = &**main_list_store;
-    let mut main_list = main_list_guard.lock().unwrap();
+    let (guard, _) = &**main_list_store;
+    let main_list = guard.lock().unwrap();
 
-    if let Some(inner) = main_list.iter_mut().find(|inner| inner.name == elements_array[1]) {
-
-        let mut starting_index = elements_array[2].parse::<i32>().unwrap();
-        let mut ending_index = elements_array[3].parse::<i32>().unwrap();
-
-        let length_of_list = inner.vec.len();
-
-        // checking if starting_index and ending_index are all valid
-
-        println!(
-            "starting index {}, ending index  {}, length of list {}",
-            starting_index,
-            ending_index,
-            length_of_list
-        );
-
-        if starting_index < 0 {
-            if starting_index < -1 * (length_of_list as i32) {
-                starting_index = 0;
-            } else {
-                starting_index = (length_of_list as i32) + -1 * ((-1 * starting_index) % (length_of_list as i32));
-            }
+    let list = match main_list.iter().find(|l| l.name == elements_array[1]) {
+        Some(l) => l,
+        None => {
+            return "*0\r\n".to_string();
         }
+    };
 
-        if ending_index < 0 {
-            if ending_index < -1 * (length_of_list as i32) {
-                ending_index = 0;
-            } else {
-                ending_index = (length_of_list as i32) + -1 * ((-1 * ending_index) % (length_of_list as i32));
-            }
-        }
+    let mut start = elements_array[2].parse::<i32>().unwrap();
+    let mut end = elements_array[3].parse::<i32>().unwrap();
 
-        println!("starting index {}, ending index  {}", starting_index, ending_index);
+    let list_len = list.vec.len() as i32;
 
-        if starting_index >= (length_of_list as i32) {
-            "*0\r\n".to_string()
-        } else if starting_index > ending_index {
-            "*0\r\n".to_string()
+    if start < 0 {
+        if start < -1 * list_len {
+            start = 0;
         } else {
-            if ending_index >= (length_of_list as i32) {
-                ending_index = (length_of_list as i32) - 1;
-            }
-
-            let mut vec_to_send: Vec<String> = Vec::new();
-
-            for i in starting_index..ending_index + 1 {
-                vec_to_send.push(inner.vec[i as usize].clone());
-            }
-
-            let mut string_to_send = format!("*{}\r\n", vec_to_send.len());
-
-            let mut tail_string = String::new();
-
-            for word in vec_to_send {
-                let tail_part = format!("${}\r\n{}\r\n", word.len(), word);
-                tail_string.push_str(&tail_part);
-            }
-
-            print!("String to send {}", string_to_send);
-
-            string_to_send.push_str(&tail_string);
-
-            string_to_send
+            start = list_len + -1 * ((-1 * start) % list_len);
         }
+    }
+
+    if end < 0 {
+        if end < -1 * list_len {
+            end = 0;
+        } else {
+            end = list_len + -1 * ((-1 * end) % list_len);
+        }
+    }
+
+    println!("[INFO] starting index {}, ending index  {}", start, end);
+
+    if start >= list_len || start > end {
+        "*0\r\n".to_string()
     } else {
-        // list doesn't exists
-        return "*0\r\n".to_string();
+        if end >= list_len {
+            end = list_len - 1;
+        }
+
+        let slice = &list.vec[start as usize..(end + 1) as usize];
+
+        let mut resp = format!("*{}\r\n", slice.len());
+
+        for item in slice {
+            resp.push_str(&format!("${}\r\n{}\r\n", item.len(), item));
+        }
+        resp
     }
 }
 
@@ -589,7 +567,7 @@ pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_lis
 
                 (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
 
-                let (cmd_array,_) = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+                let (cmd_array, _) = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
 
                 if cmd_array[0].to_ascii_lowercase() == "exec" {
                     let response = helper::handle_exec_under_multi(&vector_of_commands, store, main_list_store);
