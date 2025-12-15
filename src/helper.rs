@@ -7,37 +7,34 @@ use std::sync::{ Arc, Mutex };
 use crate::types;
 use crate::commands;
 
-// pub fn split
+/// jumps over rdb bulk string if any and is at the starting.
+/// returns offset index at character immediately after rdb file resp string ends
+pub fn skip_rdb_if_present(buf: &[u8]) -> &[u8] {
+    let mut offset = 0;
 
-pub fn check_for_rdb_file(buffer: &[u8]) -> &[u8] {
-    let mut counter = 0;
-
-    if buffer.get(counter).unwrap() == &b'$' {
-        let (number, c) = parse_number(buffer, counter);
-        counter = c;
-        // jumps over bulk string at starting which is rdb file basically
-        // returns counter index at char immediately after rdb file ends
-        // rdb file ends with no \r\n
-        counter += number;
-
-        return &buffer[counter..];
-    } else {
-        return buffer;
+    if buf.get(offset).unwrap() != &b'$' {
+        return buf;
     }
+
+    let (number, c) = parse_number(buf, offset);
+    offset = c;
+    offset += number;
+
+    return &buf[offset..];
 }
 
 pub fn get_elements_array_with_counter(starting_count: usize, bytes_received: &[u8]) -> (Vec<String>, usize) {
-    let mut counter = starting_count;
+    let mut offset = starting_count;
     let no_of_elements;
-    (no_of_elements, counter) = parse_number(bytes_received, counter);
-    return parsing_elements(bytes_received, counter, no_of_elements);
+    (no_of_elements, offset) = parse_number(bytes_received, offset);
+    return parsing_elements(bytes_received, offset, no_of_elements);
 }
 
 pub fn get_elements_array(bytes_received: &[u8]) -> Vec<String> {
-    let mut counter = 0;
+    let mut offset = 0;
     let no_of_elements;
-    (no_of_elements, counter) = parse_number(bytes_received, counter);
-    let (elements_array, _) = parsing_elements(bytes_received, counter, no_of_elements);
+    (no_of_elements, offset) = parse_number(bytes_received, offset);
+    let (elements_array, _) = parsing_elements(bytes_received, offset, no_of_elements);
     return elements_array;
 }
 
@@ -383,26 +380,26 @@ pub fn handle_expiry(time_setter_args: &str, elements_array: Vec<String>) -> Opt
     }
 }
 
-// counter must be at '$' or '*'
+// offset must be at '$' or '*'
 // returned coutner is whatever is immediately after \r\n
-pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize) {
+pub fn parse_number(bytes_received: &[u8], mut offset: usize) -> (usize, usize) {
     let mut num_in_bytes: Vec<u8> = vec![];
 
-    match bytes_received[counter] {
+    match bytes_received[offset] {
         b'$' | b'*' => {
-            counter += 1;
+            offset += 1;
             loop {
-                if bytes_received[counter] == b'\r' {
+                if bytes_received[offset] == b'\r' {
                     break;
                 }
-                num_in_bytes.push(bytes_received[counter]);
-                counter += 1;
+                num_in_bytes.push(bytes_received[offset]);
+                offset += 1;
             }
-            counter += 2;
+            offset += 2;
 
             let number_required = String::from_utf8(num_in_bytes).unwrap().parse::<usize>().unwrap();
 
-            (number_required, counter)
+            (number_required, offset)
         }
 
         _ => {
@@ -412,23 +409,23 @@ pub fn parse_number(bytes_received: &[u8], mut counter: usize) -> (usize, usize)
 }
 
 // get the elements in Vec<String> from resp
-pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_elements: usize) -> (Vec<String>, usize) {
+pub fn parsing_elements(bytes_received: &[u8], mut offset: usize, no_of_elements: usize) -> (Vec<String>, usize) {
     let mut elements_array: Vec<String> = Vec::new();
 
     for _ in 0..no_of_elements as u32 {
-        match bytes_received[counter] {
+        match bytes_received[offset] {
             b'$' => {
                 let no_of_elements_in_bulk_str;
-                (no_of_elements_in_bulk_str, counter) = parse_number(bytes_received, counter);
+                (no_of_elements_in_bulk_str, offset) = parse_number(bytes_received, offset);
 
-                let word = &bytes_received[counter..counter + no_of_elements_in_bulk_str];
+                let word = &bytes_received[offset..offset + no_of_elements_in_bulk_str];
 
                 elements_array.push(String::from_utf8_lossy(word).to_string());
 
-                counter += (no_of_elements_in_bulk_str as usize) - 1;
+                offset += (no_of_elements_in_bulk_str as usize) - 1;
 
                 // to jump over \r\n to next element
-                counter += 3;
+                offset += 3;
             }
 
             _ => {}
@@ -436,7 +433,7 @@ pub fn parsing_elements(bytes_received: &[u8], mut counter: usize, no_of_element
     }
     println!("[INFO] elements array: {:?}", elements_array);
 
-    (elements_array, counter)
+    (elements_array, offset)
 }
 
 // get starting and ending indexes

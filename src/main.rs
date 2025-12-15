@@ -54,12 +54,12 @@ fn main() {
                         return;
                     }
                     Ok(n) => {
-                        let buffer_checked = helper::check_for_rdb_file(&buffer[..n]);
+                        let buffer_checked = helper::skip_rdb_if_present(&buffer[..n]);
                         println!(
                             "[DEBUG] [SLAVE] buffer checked string: {:?}",
                             String::from_utf8_lossy(&buffer_checked)
                         );
-                
+
                         println!("[DEBUG] [SLAVE] buffer checked: bytes.len {:?}", &buffer_checked.len());
 
                         let mut counter = 0;
@@ -301,9 +301,7 @@ fn handle_connection(
                 }
 
                 "replconf" => {
-             
                     if elements_array.len() >= 2 && elements_array[1].eq_ignore_ascii_case("ack") {
-            
                         return stream;
                     }
                     let _ = stream.write_all(b"+OK\r\n");
@@ -326,7 +324,6 @@ fn handle_connection(
                     let replica_needed: usize = elements_array[1].parse().unwrap();
                     let timeout_ms: u64 = elements_array[2].parse().unwrap();
 
-    
                     let streams: Vec<TcpStream> = {
                         let guard = tcpstream_vector_clone.lock().unwrap();
                         guard
@@ -335,11 +332,22 @@ fn handle_connection(
                             .collect()
                     };
 
+                    if streams.len() == 0 {
+                        let _ = stream.write_all(b":0\r\n");
+                        return stream;
+                    }
+
                     let master_offset = *master_repl_offset.lock().unwrap();
 
-                    let initial_synced = streams.len(); // replicas already connected & synced
+                    if master_offset == 0 {
+                        let data = format!(":{}\r\n", streams.len());
+                        let _ = stream.write_all(data.as_bytes());
+                        return stream;
+                    }
 
-                    let state = Arc::new((Mutex::new(initial_synced), Condvar::new()));
+                    // let initial_synced = streams.len(); // replicas already connected & synced
+
+                    let state = Arc::new((Mutex::new(0), Condvar::new()));
 
                     let getack_cmd = b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
 
@@ -351,7 +359,6 @@ fn handle_connection(
                         thread::spawn(move || {
                             let (lock, cvar) = &*state_clone;
 
-                    
                             if slave.write_all(getack_cmd).is_err() {
                                 return;
                             }
@@ -366,18 +373,21 @@ fn handle_connection(
                                     Ok(n) => {
                                         let elems = helper::get_elements_array(&buf[..n]);
 
-                                  
                                         if
-                                            elems.len() >= 3 &&
                                             elems[0].eq_ignore_ascii_case("replconf") &&
                                             elems[1].eq_ignore_ascii_case("ack")
                                         {
                                             if let Ok(replica_offset) = elems[2].parse::<usize>() {
-                                                if replica_offset >= master_offset {
+                                                println!("[DEBUG] replica_offset {:?}", replica_offset);
+                                                println!("[DEBUG] master_offset {:?}", master_offset);
+
+                                                if replica_offset == master_offset {
                                                     let mut count = lock.lock().unwrap();
 
-                                                    if *count < streams_len {
-                                                        *count += 1;
+                                                    *count += 1;
+                                                    println!("[DEBUG] counter increase | current count {:?}", *count);
+
+                                                    if *count == streams_len || *count == replica_needed {
                                                         cvar.notify_one();
                                                     }
 
@@ -394,7 +404,6 @@ fn handle_connection(
                         });
                     }
 
-          
                     let (lock, cvar) = &*state;
                     let mut count = lock.lock().unwrap();
 
@@ -404,16 +413,19 @@ fn handle_connection(
                         let timeout = deadline - Instant::now();
                         let (new_count, wait_res) = cvar.wait_timeout(count, timeout).unwrap();
                         count = new_count;
+                        println!("[DEBUG] inside timemout | current count {:?}", *count);
 
-                        if wait_res.timed_out() {
+                        if wait_res.timed_out() && *count >= streams_len {
                             break;
                         }
                     }
 
-                    let result = (*count).min(replica_needed);
+                    let result = *count;
                     let response = format!(":{}\r\n", result);
 
                     let _ = stream.write_all(response.as_bytes());
+
+                    *master_repl_offset.lock().unwrap() += getack_cmd.len();
                 }
 
                 _ => {
