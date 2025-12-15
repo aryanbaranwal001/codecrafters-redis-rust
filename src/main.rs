@@ -55,12 +55,6 @@ fn main() {
                     }
                     Ok(n) => {
                         let buffer_checked = helper::skip_rdb_if_present(&buffer[..n]);
-                        println!(
-                            "[DEBUG] [SLAVE] buffer checked string: {:?}",
-                            String::from_utf8_lossy(&buffer_checked)
-                        );
-
-                        println!("[DEBUG] [SLAVE] buffer checked: bytes.len {:?}", &buffer_checked.len());
 
                         let mut counter = 0;
                         while counter < buffer_checked.len() {
@@ -109,7 +103,6 @@ fn main() {
 
         let mut is_connection_slave: bool = false;
 
-        let port_clone = port.clone();
         thread::spawn(move || {
             match connection {
                 Ok(mut stream) => {
@@ -121,7 +114,6 @@ fn main() {
                         if is_connection_slave {
                             let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
                             tcp_vecc.push(stream.try_clone().unwrap());
-                            println!("[DEBUG] vec_stream_slaves {:?}", tcp_vecc);
                             return;
                         }
 
@@ -150,11 +142,7 @@ fn main() {
                                             "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
                                         )
                                     {
-                                        helper::handle_slaves(
-                                            &tcpstream_vector_clone,
-                                            &buffer[..n],
-                                            &port_clone.clone()
-                                        );
+                                        helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
                                         *master_repl_offset_clone.lock().unwrap() += buffer[..n].len();
                                     }
 
@@ -353,6 +341,11 @@ fn handle_connection(
 
                     let streams_len = streams.len();
 
+                    for i in &streams {
+                        println!("[INFO | DEBUG] slave list: {:?}", i);
+                    }
+
+                    let master_off = master_offset;
                     for mut slave in streams {
                         let state_clone = Arc::clone(&state);
 
@@ -366,6 +359,9 @@ fn handle_connection(
                             let mut buf = [0u8; 512];
 
                             loop {
+                                println!("-----------------------------");
+                                println!("[DEBUG] slave {:?} master_offset {:?}", slave, master_off);
+                                println!("-----------------------------");
                                 match slave.read(&mut buf) {
                                     Ok(0) => {
                                         return;
@@ -378,19 +374,13 @@ fn handle_connection(
                                             elems[1].eq_ignore_ascii_case("ack")
                                         {
                                             if let Ok(replica_offset) = elems[2].parse::<usize>() {
-                                                println!("[DEBUG] replica_offset {:?}", replica_offset);
-                                                println!("[DEBUG] master_offset {:?}", master_offset);
-
-                                                if replica_offset == master_offset {
+                                                if replica_offset >= master_off {
                                                     let mut count = lock.lock().unwrap();
 
                                                     *count += 1;
-                                                    println!("[DEBUG] counter increase | current count {:?}", *count);
+                                                    cvar.notify_one();
 
-                                                    if *count == streams_len || *count == replica_needed {
-                                                        cvar.notify_one();
-                                                    }
-
+                                                    println!("[DEBUG] count updated, count: {}", *count);
                                                     return;
                                                 }
                                             }
@@ -409,15 +399,20 @@ fn handle_connection(
 
                     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
 
-                    while Instant::now() < deadline {
+                    loop {
                         let timeout = deadline - Instant::now();
                         let (new_count, wait_res) = cvar.wait_timeout(count, timeout).unwrap();
-                        count = new_count;
-                        println!("[DEBUG] inside timemout | current count {:?}", *count);
 
-                        if wait_res.timed_out() && *count >= streams_len {
+                        count = new_count;
+
+                        if wait_res.timed_out() {
                             break;
                         }
+
+                        if *count >= replica_needed || *count >= streams_len {
+                            break;
+                        }
+                        println!("DEBUG: count: {}", *count);
                     }
 
                     let result = *count;

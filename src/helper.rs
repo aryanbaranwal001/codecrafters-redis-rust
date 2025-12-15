@@ -83,7 +83,7 @@ pub fn handle_connection_as_slave_from_master(
 ) -> TcpStream {
     let mut elements_array = elements_array;
 
-    println!("[DEBUG] elements array from master as slave: {:?}", elements_array);
+    println!("[INFO] elements array from master as slave: {:?}", elements_array);
 
     match elements_array[0].to_ascii_lowercase().as_str() {
         "set" => {
@@ -161,13 +161,12 @@ pub fn handle_connection_as_slave_from_master(
     stream
 }
 
-pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8], port: &String) {
+pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u8]) {
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
 
     for stream in tcp_vec.iter_mut() {
         match stream.write_all(payload) {
             Ok(_) => {
-                println!("[INFO] [MASTER] command sent to slave PORT {} STREAM {:?}", port, stream);
                 println!("[INFO] [MASTER] command sent to slave {:?}", String::from_utf8_lossy(&payload));
             }
             Err(e) => {
