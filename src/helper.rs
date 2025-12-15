@@ -293,7 +293,8 @@ fn handle_exec_commands<'a>(
     }
 }
 
-// bool getting returned is "is_entry_id_invalid"
+/// validate entry ids in XADD command
+/// bool returned is "is_entry_id_invalid"
 pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, types::ValueEntry>) -> (bool, String) {
     let id = elements_array[2].clone();
 
@@ -302,8 +303,8 @@ pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, typ
 
     // checks for 0-0
     if incoming_id_one_str.parse::<u32>().unwrap() == 0 && incoming_id_two_str.parse::<u32>().unwrap() == 0 {
-        let data_to_send = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
-        return (true, data_to_send.to_string());
+        let resp = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+        return (true, resp.to_string());
     }
 
     // if stream exists
@@ -318,22 +319,22 @@ pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, typ
                 );
 
                 // checking if time part is correct
-
                 if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
                     (false, "unused".to_string())
                 } else if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
                     // checking if sequence number is correct
                     if incoming_id_two_str.parse::<u32>().unwrap() <= last_id_two {
-                        let data_to_send =
+                        let data =
                             "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
 
-                        return (true, data_to_send.to_string());
+                        return (true, data.to_string());
                     }
+                    // to satisfy signature
                     (false, "unused".to_string())
                 } else {
-                    let data_to_send =
+                    let data =
                         "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                    (true, data_to_send.to_string())
+                    (true, data.to_string())
                 }
             }
             _ => {
@@ -359,9 +360,9 @@ pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap
         map_to_enter.insert(elements_array[i + 3].clone(), elements_array[i + 4].clone());
     }
 
-    let data_to_send = format!("${}\r\n{}\r\n", id.len(), id);
+    let data = format!("${}\r\n{}\r\n", id.len(), id);
 
-    (id, map_to_enter, data_to_send)
+    (id, map_to_enter, data)
 }
 
 // handle expiry
