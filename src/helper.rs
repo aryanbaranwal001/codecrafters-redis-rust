@@ -365,21 +365,58 @@ pub fn validate_entry_id(
     error
 }
 
-// get stream related data
-pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>, String) {
+/// get stream related data
+/// returns (id, map)
+pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>) {
     let id = elements_array[2].clone();
+    let mut map: HashMap<String, String> = HashMap::new();
 
-    let mut map_to_enter: HashMap<String, String> = HashMap::new();
+    let kv_count = (elements_array.len() - 3) / 2;
 
-    let no_of_key_value_pairs = (elements_array.len() - 3) / 2;
-
-    for i in 0..no_of_key_value_pairs {
-        map_to_enter.insert(elements_array[i + 3].clone(), elements_array[i + 4].clone());
+    for i in 0..kv_count {
+        map.insert(elements_array[i + 3].clone(), elements_array[i + 4].clone());
     }
 
-    let data = format!("${}\r\n{}\r\n", id.len(), id);
+    (id, map)
+}
 
-    (id, map_to_enter, data)
+/// get starting and ending indexes from elements array
+pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
+    let start_id = elements_array[2].clone(); // start_id
+    let end_id = elements_array[3].clone(); // end_id
+
+    let start_time;
+    let start_seq;
+
+    let end_time;
+    let end_seq;
+
+    if start_id == "-" {
+        start_time = 0;
+        start_seq = 1;
+    } else if start_id.contains("-") {
+        let mut s = start_id.splitn(2, "-");
+        (start_time, start_seq) = (
+            s.next().unwrap().parse::<u128>().unwrap(),
+            s.next().unwrap().parse::<u128>().unwrap(),
+        );
+    } else {
+        start_time = start_id.parse::<u128>().unwrap();
+        start_seq = 0;
+    }
+
+    if end_id == "+" {
+        end_time = u128::MAX;
+        end_seq = u128::MAX;
+    } else if end_id.contains("-") {
+        let mut s = end_id.splitn(2, "-");
+        (end_time, end_seq) = (s.next().unwrap().parse::<u128>().unwrap(), s.next().unwrap().parse::<u128>().unwrap());
+    } else {
+        end_time = end_id.parse::<u128>().unwrap();
+        end_seq = u128::MAX;
+    }
+
+    (start_time, start_seq, end_time, end_seq)
 }
 
 // handle expiry
@@ -457,48 +494,6 @@ pub fn parsing_elements(bytes_received: &[u8], mut offset: usize, no_of_elements
     (elements_array, offset)
 }
 
-// get starting and ending indexes
-pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
-    let star_id = elements_array[2].clone();
-    let end_id = elements_array[3].clone();
-
-    let start_id_time;
-    let start_id_seq;
-
-    let end_id_time;
-    let end_id_seq;
-
-    if star_id == "-" {
-        start_id_time = 0;
-        start_id_seq = 1;
-    } else if star_id.contains("-") {
-        let mut s = star_id.splitn(2, "-");
-        (start_id_time, start_id_seq) = (
-            s.next().unwrap().parse::<u128>().unwrap(),
-            s.next().unwrap().parse::<u128>().unwrap(),
-        );
-    } else {
-        start_id_time = star_id.parse::<u128>().unwrap();
-        start_id_seq = 0;
-    }
-
-    if end_id == "+" {
-        end_id_time = u128::MAX;
-        end_id_seq = u128::MAX;
-    } else if end_id.contains("-") {
-        let mut s = end_id.splitn(2, "-");
-        (end_id_time, end_id_seq) = (
-            s.next().unwrap().parse::<u128>().unwrap(),
-            s.next().unwrap().parse::<u128>().unwrap(),
-        );
-    } else {
-        end_id_time = end_id.parse::<u128>().unwrap();
-        end_id_seq = u128::MAX;
-    }
-
-    (start_id_time, start_id_seq, end_id_time, end_id_seq)
-}
-
 pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u128, u128) {
     let start_id_time;
     let start_id_seq;
@@ -523,34 +518,27 @@ pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u1
     (start_id_time, start_id_seq, end_id_time, end_id_seq)
 }
 
-pub fn edit_the_new_starting_indexes_for_blocking_xread(
-    map: &HashMap<String, types::ValueEntry>,
-    elements_array: &mut Vec<String>
-) {
-    let no_of_streams = (elements_array.len() - 2) / 2;
+/// mutates the elements array starting indexes
+/// for easier processing of xread command
+pub fn adjust_xread_start_ids(map: &HashMap<String, types::ValueEntry>, elements_array: &mut Vec<String>) {
+    let streams_len = (elements_array.len() - 2) / 2;
 
-    for i in 0..no_of_streams {
-        if let Some(value_entry) = map.get(&elements_array[i + 2]) {
-            match &value_entry.value {
-                types::StoredValue::Stream(entry_vector) => {
-                    let id = entry_vector.last().unwrap().id.clone();
+    for i in 0..streams_len {
+        if let Some(entry) = map.get(&elements_array[i + 2]) {
+            if let types::StoredValue::Stream(entry_vec) = &entry.value {
+                let id = entry_vec.last().unwrap().id.clone();
 
-                    let mut s = id.splitn(2, "-");
-                    let (last_id_one, mut last_id_two) = (
-                        s.next().unwrap().parse::<u64>().unwrap(),
-                        s.next().unwrap().parse::<u64>().unwrap(),
-                    );
+                let mut s = id.splitn(2, "-");
+                let (last_one, mut last_two) = (
+                    s.next().unwrap().parse::<u64>().unwrap(),
+                    s.next().unwrap().parse::<u64>().unwrap(),
+                );
 
-                    last_id_two = last_id_two + 1;
-                    let start_id_new = format!("{}-{}", last_id_one, last_id_two);
+                last_two += 1;
+                let start_new = format!("{}-{}", last_one, last_two);
 
-                    elements_array[i + 2 + no_of_streams] = start_id_new;
-                }
-
-                _ => {}
+                elements_array[i + 2 + streams_len] = start_new;
             }
-            // stream doesn't exists
-        } else {
         }
     }
 }

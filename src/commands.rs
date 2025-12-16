@@ -260,7 +260,7 @@ pub fn handle_xadd(elements_array: &mut Vec<String>, store: &types::SharedStore)
     let mut map = guard.lock().unwrap();
 
     let incoming_id = elements_array[2].clone();
-    let key = &elements_array[1];
+    let key = &elements_array[1].clone();
     let last_id = helper::get_last_stream_id(key, &map);
 
     // generate the whole sequence
@@ -279,101 +279,87 @@ pub fn handle_xadd(elements_array: &mut Vec<String>, store: &types::SharedStore)
     }
 
     // if stream exists, pushing the entry to the stream
-    let data_to_send_final;
-    if let Some(value_entry) = map.get_mut(&elements_array[1]) {
-        let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
+    let resp = if let Some(value_entry) = map.get_mut(key) {
+        let (id, new_map) = helper::get_stream_related_data(&elements_array);
 
-        match &mut value_entry.value {
-            types::StoredValue::Stream(entry_vector) => {
-                entry_vector.push(types::Entry {
-                    id,
-                    map: map_to_enter,
-                });
-            }
-            _ => {}
+        if let types::StoredValue::Stream(entry_vector) = &mut value_entry.value {
+            entry_vector.push(types::Entry {
+                id: id.clone(),
+                map: new_map,
+            });
         }
-        data_to_send_final = data_to_send;
+
+        format!("${}\r\n{}\r\n", id.len(), id)
     } else {
-        let (id, map_to_enter, data_to_send) = helper::get_stream_related_data(&elements_array);
+        let (id, new_map) = helper::get_stream_related_data(&elements_array);
+        let mut vec: Vec<types::Entry> = Vec::new();
 
-        let mut vec_to_move: Vec<types::Entry> = Vec::new();
-
-        vec_to_move.push(types::Entry {
-            id,
-            map: map_to_enter,
+        vec.push(types::Entry {
+            id: id.clone(),
+            map: new_map,
         });
 
-        // creates a new stream
-        map.insert(elements_array[1].to_string(), types::ValueEntry {
-            value: types::StoredValue::Stream(vec_to_move),
+        map.insert(key.to_string(), types::ValueEntry {
+            value: types::StoredValue::Stream(vec),
             expires_at: None,
         });
-        data_to_send_final = data_to_send;
-    }
+
+        format!("${}\r\n{}\r\n", id.len(), id)
+    };
 
     cvar.notify_one();
-    return data_to_send_final;
+    return resp;
 }
 
 pub fn handle_xrange(elements_array: &mut Vec<String>, store: &types::SharedStore) -> String {
-    let (s, _) = &**store;
-    let map = s.lock().unwrap();
-    // will get these in u128
-    let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) = helper::get_start_and_end_indexes(
-        &elements_array
-    );
+    let (guard, _) = &**store;
+    let map = guard.lock().unwrap();
 
-    // getting the full entries array
+    let (start_time, start_seq, end_time, end_seq) = helper::get_start_and_end_indexes(&elements_array);
+
+    // getting the entries array
     // stream exists
-    if let Some(value_entry) = map.get(&elements_array[1]) {
-        match &value_entry.value {
-            types::StoredValue::Stream(entry_vector) => {
-                let filtered_data: Vec<&types::Entry> = entry_vector
-                    .iter()
-                    .filter(|e| {
-                        let mut s = e.id.splitn(2, "-");
-                        let (iteration_id_time, iteration_id_seq) = (
-                            s.next().unwrap().parse::<u128>().unwrap(),
-                            s.next().unwrap().parse::<u128>().unwrap(),
-                        );
-                        iteration_id_time <= end_id_time &&
-                            iteration_id_time >= start_id_time &&
-                            iteration_id_seq >= start_id_sequence &&
-                            iteration_id_seq <= end_id_sequence
-                    })
-                    .collect();
+    if let Some(entry) = map.get(&elements_array[1]) {
+        if let types::StoredValue::Stream(entry_vec) = &entry.value {
+            let filtered_data: Vec<&types::Entry> = entry_vec
+                .iter()
+                .filter(|e| {
+                    let mut s = e.id.splitn(2, "-");
+                    let (item_time, item_seq) = (
+                        s.next().unwrap().parse::<u128>().unwrap(),
+                        s.next().unwrap().parse::<u128>().unwrap(),
+                    );
 
-                let mut array_of_array_data = format!("*{}\r\n", filtered_data.len());
+                    item_time <= end_time && item_time >= start_time && item_seq >= start_seq && item_seq <= end_seq
+                })
+                .collect();
 
-                for entry in filtered_data {
-                    let entry_id = &entry.id;
-                    let hashmap = &entry.map;
+            let mut final_arr = format!("*{}\r\n", filtered_data.len());
 
-                    let mut entry_array = format!("*2\r\n");
-                    let mut hashmap_array = format!("*{}\r\n", hashmap.len() * 2);
+            for entry in filtered_data {
+                let entry_id = &entry.id;
+                let hashmap = &entry.map;
 
-                    for (key, value) in hashmap {
-                        let map_bulk_data = format!("${}\r\n{}\r\n${}\r\n{}\r\n", key.len(), key, value.len(), value);
-                        println!("key value {}, {}", key, value);
-                        hashmap_array.push_str(&map_bulk_data);
-                    }
+                let mut hmap_arr = format!("*{}\r\n", hashmap.len() * 2);
 
-                    entry_array.push_str(&format!("${}\r\n{}\r\n", entry_id.len(), entry_id));
-                    entry_array.push_str(&hashmap_array);
-
-                    array_of_array_data.push_str(&entry_array);
+                for (key, value) in hashmap {
+                    let data = format!("${}\r\n{}\r\n${}\r\n{}\r\n", key.len(), key, value.len(), value);
+                    hmap_arr.push_str(&data);
                 }
 
-                return array_of_array_data;
+                let mut entry_arr = format!("*2\r\n${}\r\n{}\r\n", entry_id.len(), entry_id);
+                entry_arr.push_str(&hmap_arr);
+                final_arr.push_str(&entry_arr);
             }
-            _ => {
-                return "unused".to_string();
-            }
+
+            return final_arr;
         }
+
+        return "-ERR entry is not a stream".to_string();
 
         // stream doesn't exists
     } else {
-        return "stream with given stream key doesn't exists".to_string();
+        return "-ERR stream with given key doesn't exists".to_string();
     }
 }
 
@@ -388,20 +374,16 @@ pub fn handle_xread(elements_array: &mut Vec<String>, store: &types::SharedStore
         let _ = elements_array.remove(1);
 
         // since above element was removed, following is basically elements_array[2]
-        let mut block_time = elements_array.remove(1).parse::<u64>().unwrap();
+        let block_time = match elements_array.remove(1).parse::<u64>().unwrap() {
+            0 => u64::MAX,
+            t => t,
+        };
 
-        if block_time == 0 {
-            block_time = u64::MAX;
-        }
+        // this adjusts the start ids by mutating them in elements array
+        helper::adjust_xread_start_ids(&map, elements_array);
 
-        // this mutates the elements array starting indexes
-        helper::edit_the_new_starting_indexes_for_blocking_xread(&map, elements_array);
-
-        (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time as u64)).unwrap();
+        (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time)).unwrap();
     }
-
-    // let mut final_array_data_of_streams = format!("");
-    // let mut no_of_valid_streams = 0;
 
     let (final_array_data_of_streams, no_of_valid_streams) = helper::get_streams_array(&map, elements_array);
 
