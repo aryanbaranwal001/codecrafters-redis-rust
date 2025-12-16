@@ -1,4 +1,5 @@
 use std::net::TcpStream;
+use std::time::{ SystemTime, UNIX_EPOCH };
 use std::u32;
 use std::{ collections::HashMap, time::Instant };
 use std::io::{ Read, Write };
@@ -293,59 +294,75 @@ fn handle_exec_commands<'a>(
     }
 }
 
-/// validate entry ids in XADD command
-/// bool returned is "is_entry_id_invalid"
-pub fn validate_entry_id(elements_array: &Vec<String>, map: &HashMap<String, types::ValueEntry>) -> (bool, String) {
-    let id = elements_array[2].clone();
+/// gives the last stream id as option<(last_ms, last_seq)>
+pub fn get_last_stream_id(key: &String, map: &HashMap<String, types::ValueEntry>) -> Option<(u128, u128)> {
+    // this whole code is an expression
+    map.get(key).and_then(|entry| {
+        if let types::StoredValue::Stream(vec) = &entry.value {
+            vec.last().map(|e| {
+                let mut s = e.id.splitn(2, '-');
+                (s.next().unwrap().parse().unwrap(), s.next().unwrap().parse().unwrap())
+            })
+        } else {
+            None
+        }
+    })
+}
 
+/// generates full stream id
+pub fn generate_full_id(last: Option<(u128, u128)>) -> String {
+    let ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+
+    let seq = match last {
+        Some((last_ms, last_seq)) if last_ms == ms => last_seq + 1,
+        _ => 0,
+    };
+
+    return format!("{ms}-{seq}");
+}
+
+/// generates only the seq part of stream id
+pub fn generate_seq_id(raw_id: &str, last: Option<(u128, u128)>) -> String {
+    let ms: u128 = raw_id.split("-").next().unwrap().parse().unwrap();
+
+    let seq = match last {
+        Some((last_ms, last_seq)) if ms == last_ms => last_seq + 1,
+        Some((last_ms, _)) if ms > last_ms => 0,
+        None if ms == 0 => 1,
+        None => 0,
+        _ => {
+            panic!("[PANIC] Invalid XADD ID");
+        }
+    };
+
+    format!("{ms}-{seq}")
+}
+
+/// validate if entry id is valid
+pub fn validate_entry_id(
+    elements_array: &Vec<String>,
+    map: &HashMap<String, types::ValueEntry>
+) -> Option<&'static str> {
+    let id = elements_array[2].clone();
+    let key = &elements_array[1];
     let s = &mut id.splitn(2, "-");
-    let (incoming_id_one_str, incoming_id_two_str) = (s.next().unwrap(), s.next().unwrap());
+    let (id_ms, id_seq) = (s.next().unwrap().parse::<u128>().unwrap(), s.next().unwrap().parse::<u128>().unwrap());
 
     // checks for 0-0
-    if incoming_id_one_str.parse::<u32>().unwrap() == 0 && incoming_id_two_str.parse::<u32>().unwrap() == 0 {
-        let resp = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
-        return (true, resp.to_string());
+    if id_ms == 0 && id_seq == 0 {
+        let error = "-ERR The ID specified in XADD must be greater than 0-0\r\n";
+        return Some(error);
     }
 
-    // if stream exists
-    if let Some(value_entry) = map.get(&elements_array[1]) {
-        match &value_entry.value {
-            types::StoredValue::Stream(entry_vector) => {
-                let last_entry_id = &entry_vector.last().unwrap().id;
-                let s = &mut last_entry_id.splitn(2, "-");
-                let (last_id_one, last_id_two) = (
-                    s.next().unwrap().parse::<u32>().unwrap(),
-                    s.next().unwrap().parse::<u32>().unwrap(),
-                );
+    let error = match get_last_stream_id(key, map) {
+        Some((last_ms, _)) if id_ms < last_ms =>
+            Some("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"),
+        Some((_, last_seq)) if id_seq <= last_seq =>
+            Some("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"),
+        _ => None,
+    };
 
-                // checking if time part is correct
-                if incoming_id_one_str.parse::<u32>().unwrap() > last_id_one {
-                    (false, "unused".to_string())
-                } else if incoming_id_one_str.parse::<u32>().unwrap() == last_id_one {
-                    // checking if sequence number is correct
-                    if incoming_id_two_str.parse::<u32>().unwrap() <= last_id_two {
-                        let data =
-                            "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-
-                        return (true, data.to_string());
-                    }
-                    // to satisfy signature
-                    (false, "unused".to_string())
-                } else {
-                    let data =
-                        "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n";
-                    (true, data.to_string())
-                }
-            }
-            _ => {
-                // this will never run
-                (false, "unused".to_string())
-            }
-        }
-    } else {
-        // if stream doesn't exists and we have checked for 0-0 then that entry id is valid
-        (false, "unused".to_string())
-    }
+    error
 }
 
 // get stream related data
