@@ -149,6 +149,8 @@ pub fn handle_connection_as_slave_with_master(
         }
 
         "replconf" => {
+            println!("[DEBUG] replconf ran in slave");
+            println!("[DEBUG] elements_array om slave:{:?}", elements_array);
             if elements_array[1].to_ascii_lowercase() == "getack" {
                 let offset = format!("{}", offset);
                 let data = format!("*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n${}\r\n{}\r\n", offset.len(), offset);
@@ -172,7 +174,7 @@ pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u
 }
 
 /// completing and securing connection from slave with master
-pub fn hand_shake(port: &String, stream: &mut TcpStream) {
+pub fn hand_shake(port: &String, stream: &mut TcpStream) -> Option<Vec<u8>> {
     let replconf_second: &str = &format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", port);
 
     let commands_to_send: [(&str, Option<&str>); 4] = [
@@ -183,44 +185,66 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) {
     ];
 
     for i in 0..commands_to_send.len() {
-        let is_expected_response = send_and_validate(stream, commands_to_send[i].0, commands_to_send[i].1);
+        let (is_expected_response, left_commands) = send_and_validate(
+            stream,
+            commands_to_send[i].0,
+            commands_to_send[i].1
+        );
 
         if !is_expected_response {
             panic!("[ERROR] [SLAVE] exp_resp doesn't equal actual_resp");
         }
+
+        match left_commands {
+            Some(l) => {
+                return Some(l);
+            }
+            None => {}
+        }
     }
 
     println!("[INFO] [SLAVE] handshake done successfully");
+    return None;
 }
 
 /// if expected response equals actual response, returns true
 /// helper function for handshake function
-pub fn send_and_validate(stream: &mut TcpStream, command: &str, exp_resp_option: Option<&str>) -> bool {
+pub fn send_and_validate(
+    stream: &mut TcpStream,
+    command: &str,
+    exp_resp_option: Option<&str>
+) -> (bool, Option<Vec<u8>>) {
     let mut buffer = [0; 512];
 
     let _ = stream.write_all(command.as_bytes());
     match stream.read(&mut buffer) {
         Ok(n) => {
+            if command == "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n" {
+                if let Some(start) = buffer.windows(2).position(|w| w[0] == b'*' && w[1].is_ascii_digit()) {
+                    return (true, Some(buffer[start..n].to_owned()));
+                }
+            }
+
             match exp_resp_option {
                 Some(exp_resp) => {
                     let act_resp: &str = &String::from_utf8_lossy(&buffer[..n]);
 
                     if act_resp == exp_resp {
-                        return true;
+                        return (true, None);
                     } else {
-                        return false;
+                        return (false, None);
                     }
                 }
 
                 None => {
-                    return true;
+                    return (true, None);
                 }
             }
         }
         Err(_) => {}
     }
 
-    return false;
+    return (false, None);
 }
 
 /// runs the queued commands in FIFO basis

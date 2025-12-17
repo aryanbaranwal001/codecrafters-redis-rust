@@ -34,14 +34,34 @@ fn main() {
         let mut master_stream = TcpStream::connect(&master_addr).unwrap();
         println!("[INFO] [SLAVE] connected with master with addr: {master_addr}");
 
-        // program panics if handshake not successful
-        helper::hand_shake(&port, &mut master_stream);
-
-        //////////// HANDLING CONNECTION WITH MASTER ////////////
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
 
         let mut offset: usize = 0;
+
+        // program panics if handshake not successful
+        match helper::hand_shake(&port, &mut master_stream) {
+            Some(left_commands) => {
+                // run the left commands
+                let mut counter = 0;
+                while counter < left_commands.len() {
+                    let (elements_array, count) = helper::get_elements_array_with_counter(counter, &left_commands);
+
+                    master_stream = helper::handle_connection_as_slave_with_master(
+                        master_stream,
+                        elements_array.clone(),
+                        &store_clone,
+                        &main_list_clone,
+                        role,
+                        offset
+                    );
+
+                    offset += count - counter;
+                    counter = count;
+                }
+            }
+            None => {}
+        }
 
         thread::spawn(move || {
             let mut buffer = [0; 512];
@@ -53,6 +73,11 @@ fn main() {
                         return;
                     }
                     Ok(n) => {
+                        println!(
+                            "[DEBUG] buffer got as slave from master: {:?}",
+                            String::from_utf8_lossy(&buffer[..n])
+                        );
+
                         let buffer_checked = helper::skip_rdb_if_present(&buffer[..n]);
 
                         let mut counter = 0;
