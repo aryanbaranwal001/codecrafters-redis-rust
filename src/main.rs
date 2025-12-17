@@ -16,6 +16,9 @@ fn main() {
         .map(|p| format!("{}", p))
         .unwrap_or_else(|| "6379".to_string());
 
+    let dir = Arc::new(Mutex::new(args.dir));
+    let dbfilename = Arc::new(Mutex::new(args.dbfilename));
+
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
@@ -110,6 +113,8 @@ fn main() {
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
+        let dir_clone = Arc::clone(&dir);
+        let dbfilename_clone = Arc::clone(&dbfilename);
 
         thread::spawn(move || match connection {
             Ok(mut stream) => {
@@ -153,6 +158,8 @@ fn main() {
                                 &store_clone,
                                 &main_list_clone,
                                 role,
+                                &dir_clone,
+                                &dbfilename_clone,
                                 &tcpstream_vector_clone,
                                 &master_repl_offset_clone,
                                 &shared_replica_count_clone,
@@ -179,6 +186,8 @@ fn handle_connection(
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
     role: &str,
+    dir_clone: &Arc<Mutex<Option<String>>>,
+    dbfilename_clone: &Arc<Mutex<Option<String>>>,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
     master_repl_offset: &Arc<Mutex<usize>>,
     shared_replica_count_clone: &Arc<Mutex<usize>>,
@@ -316,6 +325,27 @@ fn handle_connection(
                         shared_replica_count_clone,
                     );
                     let _ = stream.write_all(resp.as_bytes());
+                }
+                "config" => {
+                    if elements_array[1].to_ascii_lowercase() == "get" {
+                        if elements_array[2].to_ascii_lowercase() == "dir" {
+                            let dir = &dir_clone.lock().unwrap();
+                            if let Some(dir) = dir.as_ref() {
+                                let arr = ["dir".to_string(), dir.clone()].to_vec();
+                                let resp = helper::elements_arr_to_resp_arr(&arr);
+                                let _ = stream.write_all(resp.as_bytes());
+                            }
+                        }
+
+                        if elements_array[2].to_ascii_lowercase() == "dbfilename" {
+                            let dbfilename = &dbfilename_clone.lock().unwrap();
+                            if let Some(dbfilename) = dbfilename.as_ref() {
+                                let arr = [dbfilename.clone(), "dbfilename".to_string()].to_vec();
+                                let resp = helper::elements_arr_to_resp_arr(&arr);
+                                let _ = stream.write_all(resp.as_bytes());
+                            }
+                        }
+                    }
                 }
 
                 _ => {

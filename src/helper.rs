@@ -8,6 +8,14 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
+pub fn elements_arr_to_resp_arr(elements_array: &Vec<String>) -> String {
+    let mut resp = format!("*{}\r\n", elements_array.len());
+    for item in elements_array {
+        resp.push_str(&format!("${}\r\n{}\r\n", item.len(), item));
+    }
+    resp
+}
+
 /// jumps over rdb bulk string if any and is at the starting.
 /// returns offset index at character immediately after rdb file resp string ends
 pub fn skip_rdb_if_present(buf: &[u8]) -> &[u8] {
@@ -183,8 +191,6 @@ pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u
     for stream in tcp_vec.iter_mut() {
         let _ = stream.write_all(payload);
     }
-
-    println!("[DEBUG] command sent to all slaves: {:?}", payload);
 }
 
 /// completing and securing connection from slave with master

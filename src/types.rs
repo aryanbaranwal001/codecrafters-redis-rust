@@ -8,6 +8,10 @@ pub struct Args {
     pub port: Option<u32>,
     #[arg(short, long)]
     pub replicaof: Option<String>,
+    #[arg(short, long)]
+    pub dir: Option<String>,
+    #[arg(short, long)]
+    pub dbfilename: Option<String>,
 }
 
 // #[derive(Clone)]
