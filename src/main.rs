@@ -16,6 +16,18 @@ fn main() {
         .map(|p| format!("{}", p))
         .unwrap_or_else(|| "6379".to_string());
 
+    if let Some(_) = args.dir {
+        let dir = args.dir.as_ref().unwrap();
+        let dbfilename = args.dbfilename.as_ref().unwrap();
+
+        // create a new .rdb file
+        let _ = fs::copy(
+            format!("./emptrywkeys.rdb"),
+            format!("{}/{}", dir, dbfilename),
+        );
+        println!("[info] created {}/{}", dir, dbfilename);
+    }
+
     let dir = Arc::new(Mutex::new(args.dir));
     let dbfilename = Arc::new(Mutex::new(args.dbfilename));
 
@@ -29,7 +41,7 @@ fn main() {
 
         let master_addr = format!("{master_url}:{marter_port}");
         let mut master_stream = TcpStream::connect(&master_addr).unwrap();
-        println!("[INFO] [SLAVE] connected with master with addr: {master_addr}");
+        println!("[info] [SLAVE] connected with master with addr: {master_addr}");
 
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
@@ -62,7 +74,7 @@ fn main() {
             loop {
                 match master_stream.read(&mut buffer) {
                     Ok(0) => {
-                        println!("[INFO] [SLAVE] disconnected from master");
+                        println!("[info] [SLAVE] disconnected from master");
                         return;
                     }
                     Ok(n) => {
@@ -103,7 +115,7 @@ fn main() {
     let master_repl_offset = Arc::new(Mutex::new(0usize));
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
 
-    println!("[INFO] {} server with port number: {}", role, port);
+    println!("[info] {} server with port number: {}", role, port);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
 
@@ -118,14 +130,14 @@ fn main() {
 
         thread::spawn(move || match connection {
             Ok(mut stream) => {
-                println!("[INFO] accepted new connection");
+                println!("[info] accepted new connection");
 
                 let mut buffer = [0; 512];
 
                 loop {
                     match stream.read(&mut buffer) {
                         Ok(0) => {
-                            println!("[INFO] client disconnected");
+                            println!("[info] client disconnected");
                             return;
                         }
                         Ok(n) => {
@@ -195,7 +207,7 @@ fn handle_connection(
     match bytes_received[0] {
         b'*' => {
             let mut elements_array = helper::get_elements_array(bytes_received);
-            println!("[INFO] elements array: {:?}", elements_array);
+            println!("[info] elements array: {:?}", elements_array);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
@@ -312,7 +324,7 @@ fn handle_connection(
                     let _ = stream.write_all(header.as_bytes());
                     let _ = stream.write_all(&rdb_file_bytes);
 
-                    // assuming salve doesn't send psync again
+                    // assuming slave doesn't send psync again
                     let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
                     tcp_vecc.push(stream.try_clone().unwrap());
                 }
@@ -328,22 +340,48 @@ fn handle_connection(
                 }
                 "config" => {
                     if elements_array[1].to_ascii_lowercase() == "get" {
-                        if elements_array[2].to_ascii_lowercase() == "dir" {
-                            let dir = &dir_clone.lock().unwrap();
-                            if let Some(dir) = dir.as_ref() {
-                                let arr = ["dir".to_string(), dir.clone()].to_vec();
-                                let resp = helper::elements_arr_to_resp_arr(&arr);
-                                let _ = stream.write_all(resp.as_bytes());
+                        match elements_array[2].to_ascii_lowercase().as_str() {
+                            "dir" => {
+                                let dir = &dir_clone.lock().unwrap();
+                                if let Some(dir) = dir.as_ref() {
+                                    let arr = ["dir".to_string(), dir.clone()].to_vec();
+                                    let resp = helper::elements_arr_to_resp_arr(&arr);
+                                    let _ = stream.write_all(resp.as_bytes());
+                                }
                             }
+                            "dbfilename" => {
+                                let dbfilename = &dbfilename_clone.lock().unwrap();
+                                if let Some(dbfilename) = dbfilename.as_ref() {
+                                    let arr =
+                                        [dbfilename.clone(), "dbfilename".to_string()].to_vec();
+                                    let resp = helper::elements_arr_to_resp_arr(&arr);
+                                    let _ = stream.write_all(resp.as_bytes());
+                                }
+                            }
+                            _ => {}
                         }
+                    }
+                }
 
-                        if elements_array[2].to_ascii_lowercase() == "dbfilename" {
-                            let dbfilename = &dbfilename_clone.lock().unwrap();
-                            if let Some(dbfilename) = dbfilename.as_ref() {
-                                let arr = [dbfilename.clone(), "dbfilename".to_string()].to_vec();
-                                let resp = helper::elements_arr_to_resp_arr(&arr);
-                                let _ = stream.write_all(resp.as_bytes());
+                "keys" => {
+                    let dir = &*dir_clone.lock().unwrap();
+                    let dbfilename = &*dbfilename_clone.lock().unwrap();
+                    let path =
+                        format!("{}/{}", dir.as_ref().unwrap(), dbfilename.as_ref().unwrap());
+
+                    if elements_array[1] == "*" {
+                        if let Some(data) = fs::read(path).ok() {
+                            let kv_arr = helper::parse_rdb_get_kv(&data);
+                            let mut k_arr: Vec<String> = Vec::new();
+
+                            for i in kv_arr {
+                                k_arr.push(i[0].clone());
                             }
+
+                            let resp = helper::elements_arr_to_resp_arr(&k_arr);
+                            let _ = stream.write_all(resp.as_bytes());
+                        } else {
+                            let _ = stream.write_all("".as_bytes());
                         }
                     }
                 }

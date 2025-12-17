@@ -150,7 +150,7 @@ pub fn handle_lrange(
         }
     }
 
-    println!("[INFO] starting index {}, ending index  {}", start, end);
+    println!("[info] starting index {}, ending index  {}", start, end);
 
     if start >= list_len || start > end {
         "*0\r\n".to_string()
@@ -442,24 +442,20 @@ pub fn handle_incr(elements_array: &mut Vec<String>, store: &types::SharedStore)
     let mut map = s.lock().unwrap();
     if let Some(val) = map.get_mut(&elements_array[1]) {
         match &mut val.value {
-            types::StoredValue::String(string_var) => {
-                println!("value, word {:?}", string_var);
+            types::StoredValue::String(string_var) => match string_var.parse::<u32>() {
+                Ok(n) => {
+                    let updated_num = n + 1;
 
-                match string_var.parse::<u32>() {
-                    Ok(n) => {
-                        let updated_num = n + 1;
+                    *string_var = updated_num.to_string();
 
-                        *string_var = updated_num.to_string();
-
-                        let data_to_send = format!(":{}\r\n", updated_num);
-                        return data_to_send;
-                    }
-                    Err(_) => {
-                        let data_to_send = "-ERR value is not an integer or out of range\r\n";
-                        return data_to_send.to_string();
-                    }
+                    let data_to_send = format!(":{}\r\n", updated_num);
+                    return data_to_send;
                 }
-            }
+                Err(_) => {
+                    let data_to_send = "-ERR value is not an integer or out of range\r\n";
+                    return data_to_send.to_string();
+                }
+            },
             _ => {
                 return "unused".to_string();
             }
@@ -489,7 +485,7 @@ pub fn handle_multi(
     loop {
         match stream.read(&mut multi_cmd_buffer) {
             Ok(0) => {
-                println!("[INFO] connection disconnected");
+                println!("[info] connection disconnected");
                 return;
             }
             Ok(_n) => {
@@ -519,7 +515,7 @@ pub fn handle_multi(
                 let _ = stream.write_all(b"+QUEUED\r\n");
             }
             Err(e) => {
-                println!("[ERROR] error reading stream: {e}");
+                println!("[error] error reading stream: {e}");
             }
         }
     }
@@ -593,7 +589,7 @@ pub fn handle_wait(
     let streams_len = streams.len();
 
     for slave in &mut streams {
-        println!("[INFO] sent getack to salve: {:?}", slave);
+        println!("[info] sent getack to salve: {:?}", slave);
         let _ = slave.write_all(getack_cmd);
     }
 
