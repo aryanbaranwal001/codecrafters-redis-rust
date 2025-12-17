@@ -203,7 +203,6 @@ pub fn hand_shake(port: &String, stream: &mut TcpStream) -> Option<Vec<u8>> {
         }
     }
 
-    println!("[INFO] [SLAVE] handshake done successfully");
     return None;
 }
 
