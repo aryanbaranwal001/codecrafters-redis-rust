@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::io::{ Read, Write };
-use std::net::{ TcpListener, TcpStream };
-use std::sync::{ Arc, Condvar, Mutex };
-use std::{ fs, thread };
 use clap::Parser;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Condvar, Mutex};
+use std::{fs, thread};
 
 mod commands;
 mod helper;
@@ -11,7 +11,10 @@ mod types;
 
 fn main() {
     let args = types::Args::parse();
-    let port = args.port.map(|p| { format!("{}", p) }).unwrap_or_else(|| { "6379".to_string() });
+    let port = args
+        .port
+        .map(|p| format!("{}", p))
+        .unwrap_or_else(|| "6379".to_string());
 
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
@@ -33,7 +36,8 @@ fn main() {
             // run the left commands
             let mut counter = 0;
             while counter < left_commands.len() {
-                let (elements_array, count) = helper::get_elements_array_with_counter(counter, &left_commands);
+                let (elements_array, count) =
+                    helper::get_elements_array_with_counter(counter, &left_commands);
 
                 master_stream = helper::handle_connection_as_slave_with_master(
                     master_stream,
@@ -41,7 +45,7 @@ fn main() {
                     &store_clone,
                     &main_list_clone,
                     "role:slave",
-                    offset
+                    offset,
                 );
 
                 offset += count - counter;
@@ -63,10 +67,8 @@ fn main() {
 
                         let mut counter = 0;
                         while counter < buffer_checked.len() {
-                            let (elements_array, count) = helper::get_elements_array_with_counter(
-                                counter,
-                                &buffer_checked
-                            );
+                            let (elements_array, count) =
+                                helper::get_elements_array_with_counter(counter, &buffer_checked);
 
                             master_stream = helper::handle_connection_as_slave_with_master(
                                 master_stream,
@@ -74,7 +76,7 @@ fn main() {
                                 &store_clone,
                                 &main_list_clone,
                                 "role:slave",
-                                offset
+                                offset,
                             );
 
                             offset += count - counter;
@@ -109,58 +111,61 @@ fn main() {
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
 
-        thread::spawn(move || {
-            match connection {
-                Ok(mut stream) => {
-                    println!("[INFO] accepted new connection");
+        thread::spawn(move || match connection {
+            Ok(mut stream) => {
+                println!("[INFO] accepted new connection");
 
-                    let mut buffer = [0; 512];
+                let mut buffer = [0; 512];
 
-                    loop {
-                        match stream.read(&mut buffer) {
-                            Ok(0) => {
-                                println!("[INFO] client disconnected");
-                                return;
-                            }
-                            Ok(n) => {
-                                if role == "role:slave" {
-                                    stream = helper::handle_other_clients_as_slave(stream, &buffer, &store_clone, role);
-
-                                    continue;
-                                }
-
-                                let elements_array = helper::get_elements_array(&buffer[..n]);
-
-                                let is_write_cmd = matches!(
-                                    elements_array[0].to_ascii_lowercase().as_str(),
-                                    "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
-                                );
-
-                                if is_write_cmd {
-                                    helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
-                                    *master_repl_offset_clone.lock().unwrap() += buffer[..n].len();
-                                }
-
-                                stream = handle_connection(
-                                    &buffer,
+                loop {
+                    match stream.read(&mut buffer) {
+                        Ok(0) => {
+                            println!("[INFO] client disconnected");
+                            return;
+                        }
+                        Ok(n) => {
+                            if role == "role:slave" {
+                                stream = helper::handle_other_clients_as_slave(
                                     stream,
+                                    &buffer,
                                     &store_clone,
-                                    &main_list_clone,
                                     role,
-                                    &tcpstream_vector_clone,
-                                    &master_repl_offset_clone,
-                                    &shared_replica_count_clone
                                 );
+
+                                continue;
                             }
-                            Err(e) => {
-                                println!("[ERROR] error reading stream: {e}");
+
+                            let elements_array = helper::get_elements_array(&buffer[..n]);
+
+                            let is_write_cmd = matches!(
+                                elements_array[0].to_ascii_lowercase().as_str(),
+                                "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
+                            );
+
+                            if is_write_cmd {
+                                helper::handle_slaves(&tcpstream_vector_clone, &buffer[..n]);
+                                *master_repl_offset_clone.lock().unwrap() += buffer[..n].len();
                             }
+
+                            stream = handle_connection(
+                                &buffer,
+                                stream,
+                                &store_clone,
+                                &main_list_clone,
+                                role,
+                                &tcpstream_vector_clone,
+                                &master_repl_offset_clone,
+                                &shared_replica_count_clone,
+                            );
+                        }
+                        Err(e) => {
+                            println!("[ERROR] error reading stream: {e}");
                         }
                     }
                 }
-                Err(e) => {
-                    println!("[ERROR] error making connection: {e}");
-                }
+            }
+            Err(e) => {
+                println!("[ERROR] error making connection: {e}");
             }
         });
     }
@@ -176,7 +181,7 @@ fn handle_connection(
     role: &str,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
     master_repl_offset: &Arc<Mutex<usize>>,
-    shared_replica_count_clone: &Arc<Mutex<usize>>
+    shared_replica_count_clone: &Arc<Mutex<usize>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -279,19 +284,18 @@ fn handle_connection(
                 }
 
                 "replconf" => {
-                    if
-                        let Some(resp) = commands::handle_replconf(
-                            &elements_array,
-                            master_repl_offset,
-                            shared_replica_count_clone
-                        )
-                    {
+                    if let Some(resp) = commands::handle_replconf(
+                        &elements_array,
+                        master_repl_offset,
+                        shared_replica_count_clone,
+                    ) {
                         let _ = stream.write_all(resp.as_bytes());
                     };
                 }
 
                 "psync" => {
-                    let _ = stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
+                    let _ = stream
+                        .write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
 
                     let rdb_file_bytes = fs::read("empty.rdb").unwrap();
                     let header = format!("${}\r\n", rdb_file_bytes.len());
@@ -309,7 +313,7 @@ fn handle_connection(
                         &elements_array,
                         tcpstream_vector_clone,
                         master_repl_offset,
-                        shared_replica_count_clone
+                        shared_replica_count_clone,
                     );
                     let _ = stream.write_all(resp.as_bytes());
                 }

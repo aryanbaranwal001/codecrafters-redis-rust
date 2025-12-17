@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{ Arc, Condvar, Mutex };
 use clap::Parser;
+use std::collections::HashMap;
+use std::sync::{Arc, Condvar, Mutex};
 
-#[derive(Parser)]
-#[derive(Debug)]
+#[derive(Parser, Debug)]
 pub struct Args {
     #[arg(short, long)]
     pub port: Option<u32>,

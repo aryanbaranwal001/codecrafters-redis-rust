@@ -1,12 +1,12 @@
+use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::time::{ Duration, Instant };
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use std::u64;
-use std::io::{ Write, Read };
-use std::sync::{ Arc, Mutex };
-use std::{ thread };
 
-use crate::types::{ self };
-use crate::{ helper };
+use crate::helper;
+use crate::types::{self};
 
 pub fn handle_echo(elements_array: Vec<String>) -> String {
     let value = &elements_array[1];
@@ -21,9 +21,9 @@ pub fn handle_set(elements_array: Vec<String>, store: &types::SharedStore) -> St
     let key = &elements_array[1];
     let value = &elements_array[2];
 
-    let expires_at = elements_array
-        .get(3)
-        .and_then(|time_setter_args| helper::handle_expiry(time_setter_args, elements_array.clone()));
+    let expires_at = elements_array.get(3).and_then(|time_setter_args| {
+        helper::handle_expiry(time_setter_args, elements_array.clone())
+    });
 
     let value_entry = types::ValueEntry {
         value: types::StoredValue::String(value.clone()),
@@ -61,7 +61,10 @@ pub fn handle_get(elements_array: Vec<String>, store: &types::SharedStore) -> St
     }
 }
 
-pub fn handle_rpush(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
+pub fn handle_rpush(
+    elements_array: Vec<String>,
+    main_list_store: &types::SharedMainList,
+) -> String {
     // let (main_list_guard, cvar) = &**main_list_store;
     let (main_list_guard, cvar) = &**main_list_store;
 
@@ -73,7 +76,7 @@ pub fn handle_rpush(elements_array: Vec<String>, main_list_store: &types::Shared
     let s = main_list.iter_mut().find(|l| &l.name == list_name);
 
     let list = match s {
-        Some(list) => { list }
+        Some(list) => list,
         None => {
             main_list.push(types::List::new(&list_name));
             main_list.last_mut().unwrap()
@@ -86,7 +89,10 @@ pub fn handle_rpush(elements_array: Vec<String>, main_list_store: &types::Shared
     return format!(":{}\r\n", list.vec.len());
 }
 
-pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
+pub fn handle_lpush(
+    elements_array: Vec<String>,
+    main_list_store: &types::SharedMainList,
+) -> String {
     let (main_list_guard, _) = &**main_list_store;
 
     let mut main_list = main_list_guard.lock().unwrap();
@@ -97,7 +103,7 @@ pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::Shared
     let s = main_list.iter_mut().find(|l| &l.name == list_name);
 
     let list = match s {
-        Some(list) => { list }
+        Some(list) => list,
         None => {
             main_list.push(types::List::new(&list_name));
             main_list.last_mut().unwrap()
@@ -109,7 +115,10 @@ pub fn handle_lpush(elements_array: Vec<String>, main_list_store: &types::Shared
     return format!(":{}\r\n", list.vec.len());
 }
 
-pub fn handle_lrange(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
+pub fn handle_lrange(
+    elements_array: Vec<String>,
+    main_list_store: &types::SharedMainList,
+) -> String {
     let (guard, _) = &**main_list_store;
     let main_list = guard.lock().unwrap();
 
@@ -192,8 +201,7 @@ pub fn handle_lpop(elements_array: Vec<String>, main_list_store: &types::SharedM
         .unwrap_or(1)
         .min(list.vec.len());
 
-    if count == 1 {
-    }
+    if count == 1 {}
 
     let resp = if count == 1 {
         let element = list.vec.remove(0);
@@ -211,7 +219,10 @@ pub fn handle_lpop(elements_array: Vec<String>, main_list_store: &types::SharedM
     resp
 }
 
-pub fn handle_blpop(elements_array: Vec<String>, main_list_store: &types::SharedMainList) -> String {
+pub fn handle_blpop(
+    elements_array: Vec<String>,
+    main_list_store: &types::SharedMainList,
+) -> String {
     let (guard, cvar) = &**main_list_store;
     let mut main_list = guard.lock().unwrap();
 
@@ -227,7 +238,13 @@ pub fn handle_blpop(elements_array: Vec<String>, main_list_store: &types::Shared
             Some(list) if !list.vec.is_empty() => {
                 let element = list.vec.remove(0);
 
-                break format!("*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n", list.name.len(), list.name, element.len(), element);
+                break format!(
+                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                    list.name.len(),
+                    list.name,
+                    element.len(),
+                    element
+                );
             }
             _ => {
                 let (mainlist_res, timeout_res) = cvar.wait_timeout(main_list, timeout).unwrap();
@@ -250,8 +267,8 @@ pub fn handle_type(elements_array: Vec<String>, store: &types::SharedStore) -> S
 
     if let Some(entry) = map.get(&elements_array[1]) {
         match entry.value {
-            types::StoredValue::String(_) => { "+string\r\n".to_string() }
-            types::StoredValue::Stream(_) => { "+stream\r\n".to_string() }
+            types::StoredValue::String(_) => "+string\r\n".to_string(),
+            types::StoredValue::Stream(_) => "+stream\r\n".to_string(),
         }
     } else {
         "+none\r\n".to_string()
@@ -302,10 +319,13 @@ pub fn handle_xadd(elements_array: &mut Vec<String>, store: &types::SharedStore)
             map: new_map,
         });
 
-        map.insert(key.to_string(), types::ValueEntry {
-            value: types::StoredValue::Stream(vec),
-            expires_at: None,
-        });
+        map.insert(
+            key.to_string(),
+            types::ValueEntry {
+                value: types::StoredValue::Stream(vec),
+                expires_at: None,
+            },
+        );
 
         format!("${}\r\n{}\r\n", id.len(), id)
     };
@@ -318,7 +338,8 @@ pub fn handle_xrange(elements_array: &mut Vec<String>, store: &types::SharedStor
     let (guard, _) = &**store;
     let map = guard.lock().unwrap();
 
-    let (start_time, start_seq, end_time, end_seq) = helper::get_start_and_end_indexes(&elements_array);
+    let (start_time, start_seq, end_time, end_seq) =
+        helper::get_start_and_end_indexes(&elements_array);
 
     // getting the entries array
     // stream exists
@@ -333,7 +354,10 @@ pub fn handle_xrange(elements_array: &mut Vec<String>, store: &types::SharedStor
                         s.next().unwrap().parse::<u128>().unwrap(),
                     );
 
-                    item_time <= end_time && item_time >= start_time && item_seq >= start_seq && item_seq <= end_seq
+                    item_time <= end_time
+                        && item_time >= start_time
+                        && item_seq >= start_seq
+                        && item_seq <= end_seq
                 })
                 .collect();
 
@@ -346,7 +370,13 @@ pub fn handle_xrange(elements_array: &mut Vec<String>, store: &types::SharedStor
                 let mut hmap_arr = format!("*{}\r\n", hashmap.len() * 2);
 
                 for (key, value) in hashmap {
-                    let data = format!("${}\r\n{}\r\n${}\r\n{}\r\n", key.len(), key, value.len(), value);
+                    let data = format!(
+                        "${}\r\n{}\r\n${}\r\n{}\r\n",
+                        key.len(),
+                        key,
+                        value.len(),
+                        value
+                    );
                     hmap_arr.push_str(&data);
                 }
 
@@ -385,15 +415,21 @@ pub fn handle_xread(elements_array: &mut Vec<String>, store: &types::SharedStore
         // this adjusts the start ids by mutating them in elements array
         helper::adjust_xread_start_ids(&map, elements_array);
 
-        (map, _) = cvar.wait_timeout(map, Duration::from_millis(block_time)).unwrap();
+        (map, _) = cvar
+            .wait_timeout(map, Duration::from_millis(block_time))
+            .unwrap();
     }
 
-    let (final_array_data_of_streams, no_of_valid_streams) = helper::get_streams_array(&map, elements_array);
+    let (final_array_data_of_streams, no_of_valid_streams) =
+        helper::get_streams_array(&map, elements_array);
 
     if no_of_valid_streams != 0 {
         let final_array_data_of_streams_head = format!("*{}\r\n", no_of_valid_streams);
 
-        let data_to_send = format!("{}{}", final_array_data_of_streams_head, final_array_data_of_streams);
+        let data_to_send = format!(
+            "{}{}",
+            final_array_data_of_streams_head, final_array_data_of_streams
+        );
 
         return data_to_send;
     } else {
@@ -440,7 +476,11 @@ pub fn handle_incr(elements_array: &mut Vec<String>, store: &types::SharedStore)
     }
 }
 
-pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_list_store: &types::SharedMainList) {
+pub fn handle_multi(
+    stream: &mut TcpStream,
+    store: &types::SharedStore,
+    main_list_store: &types::SharedMainList,
+) {
     let mut multi_cmd_buffer = [0; 512];
     let _ = stream.write_all(b"+OK\r\n");
 
@@ -458,10 +498,15 @@ pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_lis
 
                 (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
 
-                let (cmd_array, _) = helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+                let (cmd_array, _) =
+                    helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
 
                 if cmd_array[0].to_ascii_lowercase() == "exec" {
-                    let response = helper::handle_exec_under_multi(&vector_of_commands, store, main_list_store);
+                    let response = helper::handle_exec_under_multi(
+                        &vector_of_commands,
+                        store,
+                        main_list_store,
+                    );
                     let _ = stream.write_all(response.as_bytes());
                     break;
                 } else if cmd_array[0].to_ascii_lowercase() == "discard" {
@@ -483,8 +528,10 @@ pub fn handle_multi(stream: &mut TcpStream, store: &types::SharedStore, main_lis
 /// handle info command
 pub fn handle_info(elements_array: &Vec<String>, role: &str) -> Option<String> {
     if elements_array[1] == "replication" {
-        let data =
-            format!("role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb", role);
+        let data = format!(
+            "role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+            role
+        );
 
         let response = format!("${}\r\n{}\r\n", data.len(), data);
 
@@ -498,7 +545,7 @@ pub fn handle_info(elements_array: &Vec<String>, role: &str) -> Option<String> {
 pub fn handle_replconf(
     elements_array: &Vec<String>,
     master_repl_offset: &Arc<Mutex<usize>>,
-    shared_replica_count_clone: &Arc<Mutex<usize>>
+    shared_replica_count_clone: &Arc<Mutex<usize>>,
 ) -> Option<String> {
     if elements_array[1].to_ascii_lowercase() == "ack" {
         let master_offset = *master_repl_offset.lock().unwrap();
@@ -518,17 +565,14 @@ pub fn handle_wait(
     elements_array: &Vec<String>,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
     master_repl_offset: &Arc<Mutex<usize>>,
-    shared_replica_count_clone: &Arc<Mutex<usize>>
+    shared_replica_count_clone: &Arc<Mutex<usize>>,
 ) -> String {
     let replica_needed: usize = elements_array[1].parse().unwrap();
     let timeout_ms: u64 = elements_array[2].parse().unwrap();
 
     let mut streams: Vec<TcpStream> = {
         let guard = tcpstream_vector_clone.lock().unwrap();
-        guard
-            .iter()
-            .map(|s| s.try_clone().unwrap())
-            .collect()
+        guard.iter().map(|s| s.try_clone().unwrap()).collect()
     };
 
     if streams.len() == 0 {
