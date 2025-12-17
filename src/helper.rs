@@ -165,15 +165,10 @@ pub fn handle_slaves(tcpstream_vector: &Arc<Mutex<Vec<TcpStream>>>, payload: &[u
     let mut tcp_vec = tcpstream_vector.lock().unwrap();
 
     for stream in tcp_vec.iter_mut() {
-        match stream.write_all(payload) {
-            Ok(_) => {
-                println!("[INFO] [MASTER] command sent to slave {:?}", String::from_utf8_lossy(&payload));
-            }
-            Err(e) => {
-                println!("[ERROR] [MASTER] error sending command to slaves: {e}");
-            }
-        }
+        let _ = stream.write_all(payload);
     }
+
+    println!("[DEBUG] command sent to all slaves: {:?}", payload);
 }
 
 /// completing and securing connection from slave with master
@@ -489,7 +484,6 @@ pub fn parsing_elements(bytes_received: &[u8], mut offset: usize, no_of_elements
             _ => {}
         }
     }
-    println!("[INFO] elements array: {:?}", elements_array);
 
     (elements_array, offset)
 }

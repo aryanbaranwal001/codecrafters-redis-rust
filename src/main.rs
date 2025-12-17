@@ -18,7 +18,6 @@ fn main() {
 
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
-
     //////////// HANDLING ARGUEMENTS ////////////
 
     let port = args.port.map(|p| { format!("{}", p) }).unwrap_or_else(|| { "6379".to_string() });
@@ -88,6 +87,7 @@ fn main() {
 
     //////////// HANDLING CONNECTIONS ////////////
 
+    let shared_replicas_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let master_repl_offset = Arc::new(Mutex::new(0usize));
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     println!("[INFO] {} server with port number: {}", role, port);
@@ -100,8 +100,7 @@ fn main() {
         let main_list_clone = Arc::clone(&main_list);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
-
-        let mut is_connection_slave: bool = false;
+        let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
 
         thread::spawn(move || {
             match connection {
@@ -111,12 +110,6 @@ fn main() {
                     let mut buffer = [0; 512];
 
                     loop {
-                        if is_connection_slave {
-                            let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
-                            tcp_vecc.push(stream.try_clone().unwrap());
-                            return;
-                        }
-
                         match stream.read(&mut buffer) {
                             Ok(0) => {
                                 println!("[INFO] client disconnected");
@@ -124,13 +117,7 @@ fn main() {
                             }
                             Ok(n) => {
                                 if role == "role:slave" {
-                                    stream = helper::handle_other_clients_as_slave(
-                                        stream,
-                                        &buffer,
-                                        &store_clone,
-                                        role
-                                        // &main_list_clone,
-                                    );
+                                    stream = helper::handle_other_clients_as_slave(stream, &buffer, &store_clone, role);
 
                                     continue;
                                 } else {
@@ -152,9 +139,9 @@ fn main() {
                                         &store_clone,
                                         &main_list_clone,
                                         role,
-                                        &mut is_connection_slave,
                                         &tcpstream_vector_clone,
-                                        Arc::clone(&master_repl_offset_clone)
+                                        Arc::clone(&master_repl_offset_clone),
+                                        Arc::clone(&shared_replica_count_clone)
                                     );
                                 }
                             }
@@ -180,13 +167,14 @@ fn handle_connection(
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
     role: &str,
-    is_connection_slave: &mut bool,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
-    master_repl_offset: Arc<Mutex<usize>>
+    master_repl_offset: Arc<Mutex<usize>>,
+    shared_replica_count_clone: Arc<Mutex<usize>>
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
             let mut elements_array = helper::get_elements_array(bytes_received);
+            println!("[INFO] elements array: {:?}", elements_array);
 
             match elements_array[0].to_ascii_lowercase().as_str() {
                 "echo" => {
@@ -289,7 +277,21 @@ fn handle_connection(
                 }
 
                 "replconf" => {
-                    if elements_array.len() >= 2 && elements_array[1].eq_ignore_ascii_case("ack") {
+                    if elements_array[1].to_ascii_lowercase() == "ack" {
+                        let master_offset = *master_repl_offset.lock().unwrap();
+                        let replica_offset = elements_array[2].parse::<usize>().unwrap();
+
+                        if replica_offset >= master_offset {
+                            *shared_replica_count_clone.lock().unwrap() += 1;
+                        }
+
+                        println!(
+                            "[DEBUG] master_offset: {:?}, replica_offset: {:?}, updated_count: {:?}",
+                            master_offset,
+                            replica_offset,
+                            *shared_replica_count_clone.lock().unwrap()
+                        );
+
                         return stream;
                     }
                     let _ = stream.write_all(b"+OK\r\n");
@@ -305,14 +307,16 @@ fn handle_connection(
 
                     let _ = stream.write_all(&rdb_file_bytes);
 
-                    *is_connection_slave = true;
+                    // assuming salve doesn't send psync again
+                    let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
+                    tcp_vecc.push(stream.try_clone().unwrap());
                 }
 
                 "wait" => {
                     let replica_needed: usize = elements_array[1].parse().unwrap();
                     let timeout_ms: u64 = elements_array[2].parse().unwrap();
 
-                    let streams: Vec<TcpStream> = {
+                    let mut streams: Vec<TcpStream> = {
                         let guard = tcpstream_vector_clone.lock().unwrap();
                         guard
                             .iter()
@@ -335,88 +339,38 @@ fn handle_connection(
 
                     // let initial_synced = streams.len(); // replicas already connected & synced
 
-                    let state = Arc::new((Mutex::new(0), Condvar::new()));
-
                     let getack_cmd = b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
 
                     let streams_len = streams.len();
 
-                    for i in &streams {
-                        println!("[INFO | DEBUG] slave list: {:?}", i);
+                    for slave in &mut streams {
+                        println!("[INFO] sent getack to salve: {:?}", slave);
+                        let _ = slave.write_all(getack_cmd);
                     }
 
-                    let master_off = master_offset;
-                    for mut slave in streams {
-                        let state_clone = Arc::clone(&state);
-
-                        thread::spawn(move || {
-                            let (lock, cvar) = &*state_clone;
-
-                            if slave.write_all(getack_cmd).is_err() {
-                                return;
-                            }
-
-                            let mut buf = [0u8; 512];
-
-                            loop {
-                                println!("-----------------------------");
-                                println!("[DEBUG] slave {:?} master_offset {:?}", slave, master_off);
-                                println!("-----------------------------");
-                                match slave.read(&mut buf) {
-                                    Ok(0) => {
-                                        return;
-                                    }
-                                    Ok(n) => {
-                                        let elems = helper::get_elements_array(&buf[..n]);
-
-                                        if
-                                            elems[0].eq_ignore_ascii_case("replconf") &&
-                                            elems[1].eq_ignore_ascii_case("ack")
-                                        {
-                                            if let Ok(replica_offset) = elems[2].parse::<usize>() {
-                                                if replica_offset >= master_off {
-                                                    let mut count = lock.lock().unwrap();
-
-                                                    *count += 1;
-                                                    cvar.notify_one();
-
-                                                    println!("[DEBUG] count updated, count: {}", *count);
-                                                    return;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(_) => {
-                                        return;
-                                    }
-                                }
-                            }
-                        });
-                    }
-
-                    let (lock, cvar) = &*state;
-                    let mut count = lock.lock().unwrap();
+                    // waiting for
 
                     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+                    let response = loop {
+                        let replica_count = *shared_replica_count_clone.lock().unwrap();
 
-                    loop {
-                        let timeout = deadline - Instant::now();
-                        let (new_count, wait_res) = cvar.wait_timeout(count, timeout).unwrap();
-
-                        count = new_count;
-
-                        if wait_res.timed_out() {
-                            break;
+                        if Instant::now() > deadline {
+                            break format!(":{}\r\n", replica_count);
                         }
 
-                        if *count >= replica_needed || *count >= streams_len {
-                            break;
+                        if replica_count >= replica_needed {
+                            break format!(":{}\r\n", replica_count);
                         }
-                        println!("DEBUG: count: {}", *count);
-                    }
 
-                    let result = *count;
-                    let response = format!(":{}\r\n", result);
+                        if replica_count == streams_len {
+                            break format!(":{}\r\n", replica_count);
+                        }
+
+                        thread::sleep(Duration::from_millis(10));
+                    };
+
+                    *shared_replica_count_clone.lock().unwrap() = 0;
+                    println!("[DEBUG] response to send: {:?}", response);
 
                     let _ = stream.write_all(response.as_bytes());
 
