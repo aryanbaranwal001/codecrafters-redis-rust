@@ -318,7 +318,7 @@ fn handle_connection(
                     let _ = stream
                         .write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
 
-                    let rdb_file_bytes = fs::read("empty.rdb").unwrap();
+                    let rdb_file_bytes = fs::read("rdbfile.rdb").unwrap();
                     let header = format!("${}\r\n", rdb_file_bytes.len());
 
                     let _ = stream.write_all(header.as_bytes());
@@ -381,7 +381,7 @@ fn handle_connection(
                             let resp = helper::elements_arr_to_resp_arr(&k_arr);
                             let _ = stream.write_all(resp.as_bytes());
                         } else {
-                            let _ = stream.write_all("".as_bytes());
+                            let _ = stream.write_all("*0\r\n\r\n".as_bytes());
                         }
                     }
                 }
