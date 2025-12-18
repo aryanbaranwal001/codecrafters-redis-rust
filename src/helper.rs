@@ -55,6 +55,9 @@ pub fn handle_subscribed_mode(
 
                     *is_subscribed = true;
                 }
+                "ping" => {
+                    let _ = stream.write_all("*2\r\n$4\r\npong\r\n$0\r\n\r\n".as_bytes());
+                }
                 _ => {
                     let error = format!(
                         "-ERR Can't execute '{}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
