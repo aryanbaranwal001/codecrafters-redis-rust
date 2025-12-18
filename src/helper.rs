@@ -8,7 +8,7 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
-pub fn parse_db(data: &Vec<u8>) -> Vec<[String; 2]> {
+pub fn parse_db(data: &Vec<u8>) -> (Vec<[String; 2]>, Vec<[String; 3]>, Vec<[String; 3]>) {
     // fe => start of database
     // 00 index of database
     // fb indicates that hash table size information
@@ -36,6 +36,8 @@ pub fn parse_db(data: &Vec<u8>) -> Vec<[String; 2]> {
     // println!("end: {}", end);
 
     let mut kv_arr: Vec<[String; 2]> = Vec::new();
+    let mut kv_arr_fc: Vec<[String; 3]> = Vec::new();
+    let mut kv_arr_fd: Vec<[String; 3]> = Vec::new();
 
     let mut counter = start + 5;
 
@@ -58,7 +60,7 @@ pub fn parse_db(data: &Vec<u8>) -> Vec<[String; 2]> {
             0xfc => {
                 // handling timout
                 counter += 1;
-                let _timeout = &data[counter..counter + 8];
+                let timeout = u64::from_le_bytes(data[counter..counter + 8].try_into().unwrap());
                 counter += 8;
 
                 // handling key value
@@ -73,12 +75,12 @@ pub fn parse_db(data: &Vec<u8>) -> Vec<[String; 2]> {
                 counter += 1;
 
                 let v = String::from_utf8_lossy(&value);
-                kv_arr.push([k.to_string(), v.to_string()]);
+                kv_arr_fc.push([k.to_string(), v.to_string(), format!("{timeout}")]);
             }
             0xfd => {
                 // handling timout
                 counter += 1;
-                let _timeout = &data[counter..counter + 4];
+                let timeout = u32::from_le_bytes(data[counter..counter + 4].try_into().unwrap());
                 counter += 4;
 
                 // handling key value
@@ -93,14 +95,14 @@ pub fn parse_db(data: &Vec<u8>) -> Vec<[String; 2]> {
                 counter += 1;
 
                 let v = String::from_utf8_lossy(&value);
-                kv_arr.push([k.to_string(), v.to_string()]);
+                kv_arr_fd.push([k.to_string(), v.to_string(), format!("{timeout}")]);
             }
             _ => {}
         }
     }
 
     println!("kv arr: {:?}", kv_arr);
-    kv_arr
+    (kv_arr, kv_arr_fc, kv_arr_fd)
 }
 
 /// returns counter and element

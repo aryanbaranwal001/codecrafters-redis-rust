@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 mod commands;
@@ -232,16 +233,61 @@ fn handle_connection(
                         if let Some(dbfilename) = dbfilename {
                             let path = format!("{}/{}", dir, dbfilename);
                             let data = fs::read(path).unwrap();
-                            let kv_arr = helper::parse_db(&data);
+                            let (kv_arr, kv_arr_fc, kv_arr_fd) = helper::parse_db(&data);
 
-                            let kv_pair =
-                                kv_arr.iter().find(|p| p[0] == elements_array[1]).unwrap();
+                            if let Some(kv_pair) = kv_arr.iter().find(|p| p[0] == elements_array[1])
+                            {
+                                let _ = stream.write_all(
+                                    format!("${}\r\n{}\r\n", kv_pair[1].len(), kv_pair[1])
+                                        .as_bytes(),
+                                );
+                            }
 
-                            println!("[debug] kv pair: {:?}", kv_pair);
+                            if let Some(kv_pair_fc) =
+                                kv_arr_fc.iter().find(|p| p[0] == elements_array[1])
+                            {
+                                let expiry = kv_pair_fc[2].parse::<u64>().unwrap();
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis();
 
-                            let _ = stream.write_all(
-                                format!("${}\r\n{}\r\n", kv_pair[1].len(), kv_pair[1]).as_bytes(),
-                            );
+                                if now as u64 > expiry {
+                                    let _ = stream.write_all("$-1\r\n".as_bytes());
+                                } else {
+                                    let _ = stream.write_all(
+                                        format!(
+                                            "${}\r\n{}\r\n",
+                                            kv_pair_fc[1].len(),
+                                            kv_pair_fc[1]
+                                        )
+                                        .as_bytes(),
+                                    );
+                                }
+                            }
+
+                            if let Some(kv_pair_fd) =
+                                kv_arr_fd.iter().find(|p| p[0] == elements_array[1])
+                            {
+                                let expiry = kv_pair_fd[2].parse::<u32>().unwrap();
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+
+                                if now as u32 > expiry {
+                                    let _ = stream.write_all("$-1\r\n".as_bytes());
+                                } else {
+                                    let _ = stream.write_all(
+                                        format!(
+                                            "${}\r\n{}\r\n",
+                                            kv_pair_fd[1].len(),
+                                            kv_pair_fd[1]
+                                        )
+                                        .as_bytes(),
+                                    );
+                                }
+                            }
                         }
                     } else {
                         let response = commands::handle_get(elements_array, store);
