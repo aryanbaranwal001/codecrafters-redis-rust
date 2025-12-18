@@ -554,11 +554,17 @@ fn handle_connection(
 
                     match map.get_mut(&elements_array[1]) {
                         Some(subscribers) => {
-                            // for subscriber in subscribers {
-                            //     let _ = subscriber.write_all(format!("{}",));
-                            // }
-                            let _ =
-                                stream.write_all(format!(":{}\r\n", subscribers.len()).as_bytes());
+                            let subs_len = subscribers.len();
+                            for subscriber in subscribers {
+                                let arr = vec![
+                                    "message".to_string(),
+                                    elements_array[1].clone(),
+                                    elements_array[2].clone(),
+                                ];
+                                let resp = helper::elements_arr_to_resp_arr(&arr);
+                                let _ = subscriber.write_all(resp.as_bytes());
+                            }
+                            let _ = stream.write_all(format!(":{}\r\n", subs_len).as_bytes());
                         }
                         None => {}
                     }
