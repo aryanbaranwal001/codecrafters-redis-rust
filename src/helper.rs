@@ -8,6 +8,68 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
+pub fn handle_subscribed_mode(
+    mut stream: TcpStream,
+    bytes_received: &[u8],
+    subs_channel: &Arc<Mutex<Vec<String>>>,
+    is_subscribed: &mut bool,
+) -> TcpStream {
+    match bytes_received[0] {
+        b'*' => {
+            let elements_array = get_elements_array(&bytes_received);
+
+            match elements_array[0].to_ascii_lowercase().as_str() {
+                "subscribe" => {
+                    let mut list = subs_channel.lock().unwrap();
+
+                    match list.iter().find(|c| *c == &elements_array[1]) {
+                        Some(channel) => {
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "subscribe".len(),
+                                "subscribe".to_string(),
+                                channel.len(),
+                                channel.clone(),
+                                list.len()
+                            );
+
+                            println!("[debug] resp when channel exists: {:?}", resp);
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                        None => {
+                            list.push(elements_array[1].clone());
+
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "subscribe".len(),
+                                "subscribe".to_string(),
+                                elements_array[1].len(),
+                                elements_array[1].clone(),
+                                list.len()
+                            );
+
+                            println!("[debug] resp when channel doesn't exists: {:?}", resp);
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                    }
+
+                    *is_subscribed = true;
+                }
+                _ => {
+                    let error = format!(
+                        "-ERR Can't execute '{}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
+                        elements_array[0]
+                    );
+                    let _ = stream.write_all(error.as_bytes());
+                }
+            }
+        }
+
+        _ => {}
+    }
+    stream
+}
+
 pub fn parse_db(data: &Vec<u8>) -> (Vec<[String; 2]>, Vec<[String; 3]>, Vec<[String; 3]>) {
     // fe => start of database
     // 00 index of database

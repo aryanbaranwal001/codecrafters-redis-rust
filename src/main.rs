@@ -128,7 +128,6 @@ fn main() {
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
-
         let subs_channel: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
         thread::spawn(move || match connection {
@@ -136,6 +135,8 @@ fn main() {
                 println!("[info] accepted new connection");
 
                 let mut buffer = [0; 512];
+
+                let mut is_subscribed = false;
 
                 loop {
                     match stream.read(&mut buffer) {
@@ -150,6 +151,17 @@ fn main() {
                                     &buffer,
                                     &store_clone,
                                     role,
+                                );
+
+                                continue;
+                            }
+
+                            if is_subscribed {
+                                stream = helper::handle_subscribed_mode(
+                                    stream,
+                                    &buffer,
+                                    &subs_channel,
+                                    &mut is_subscribed,
                                 );
 
                                 continue;
@@ -179,6 +191,7 @@ fn main() {
                                 &master_repl_offset_clone,
                                 &shared_replica_count_clone,
                                 &subs_channel,
+                                &mut is_subscribed,
                             );
                         }
                         Err(e) => {
@@ -208,6 +221,7 @@ fn handle_connection(
     master_repl_offset: &Arc<Mutex<usize>>,
     shared_replica_count_clone: &Arc<Mutex<usize>>,
     subs_channel: &Arc<Mutex<Vec<String>>>,
+    is_subscribed: &mut bool,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -489,6 +503,8 @@ fn handle_connection(
                             let _ = stream.write_all(resp.as_bytes());
                         }
                     }
+
+                    *is_subscribed = true;
                 }
 
                 _ => {
