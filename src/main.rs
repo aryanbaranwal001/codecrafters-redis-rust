@@ -570,6 +570,43 @@ fn handle_connection(
                     }
                 }
 
+                "unsubscribe" => {
+                    let mut map = subs_htable.lock().unwrap();
+                    let mut subs_channels = channels_subscribed.lock().unwrap();
+
+                    // remove from channels list
+                    let index = subs_channels
+                        .iter()
+                        .position(|channel| *channel == elements_array[1])
+                        .unwrap();
+                    subs_channels.remove(index);
+
+                    // remove from subs_htable
+                    match map.get_mut(&elements_array[1]) {
+                        Some(subscribers) => {
+                            let index = subscribers
+                                .iter()
+                                .position(|subs| {
+                                    subs.peer_addr().unwrap() == stream.peer_addr().unwrap()
+                                })
+                                .unwrap();
+                            subscribers.remove(index);
+
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "unsubscribe".len(),
+                                "unsubscribe",
+                                &elements_array[1].len(),
+                                &elements_array[1],
+                                subs_channels.len()
+                            );
+
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                        None => {}
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }

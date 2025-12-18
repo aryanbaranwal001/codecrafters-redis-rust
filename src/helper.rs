@@ -119,6 +119,43 @@ pub fn handle_subscribed_mode(
                     }
                 }
 
+                "unsubscribe" => {
+                    let mut map = subs_htable.lock().unwrap();
+                    let mut subs_channels = channels_subscribed.lock().unwrap();
+
+                    // remove from channels list
+                    let index = subs_channels
+                        .iter()
+                        .position(|channel| *channel == elements_array[1])
+                        .unwrap();
+                    subs_channels.remove(index);
+
+                    // remove from subs_htable
+                    match map.get_mut(&elements_array[1]) {
+                        Some(subscribers) => {
+                            let index = subscribers
+                                .iter()
+                                .position(|subs| {
+                                    subs.peer_addr().unwrap() == stream.peer_addr().unwrap()
+                                })
+                                .unwrap();
+                            subscribers.remove(index);
+
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "unsubscribe".len(),
+                                "unsubscribe",
+                                &elements_array[1].len(),
+                                &elements_array[1],
+                                subs_channels.len()
+                            );
+
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                        None => {}
+                    }
+                }
+
                 "ping" => {
                     let _ = stream.write_all("*2\r\n$4\r\npong\r\n$0\r\n\r\n".as_bytes());
                 }
