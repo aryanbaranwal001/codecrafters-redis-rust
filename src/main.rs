@@ -460,7 +460,19 @@ fn handle_connection(
                     let mut list = subs_channel.lock().unwrap();
 
                     match list.iter().find(|c| *c == &elements_array[1]) {
-                        Some(_) => {}
+                        Some(channel) => {
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "subscribe".len(),
+                                "subscribe".to_string(),
+                                channel.len(),
+                                channel.clone(),
+                                list.len()
+                            );
+
+                            println!("[debug] resp when channel exists: {:?}", resp);
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
                         None => {
                             list.push(elements_array[1].clone());
 
@@ -473,7 +485,7 @@ fn handle_connection(
                                 list.len()
                             );
 
-                            println!("[debug] resp: {:?}", resp);
+                            println!("[debug] resp when channel doesn't exists: {:?}", resp);
                             let _ = stream.write_all(resp.as_bytes());
                         }
                     }
