@@ -122,12 +122,14 @@ fn main() {
 
     for connection in listener.incoming() {
         let store_clone = Arc::clone(&store);
+        let dir_clone = Arc::clone(&dir);
         let main_list_clone = Arc::clone(&main_list);
+        let dbfilename_clone = Arc::clone(&dbfilename);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
-        let dir_clone = Arc::clone(&dir);
-        let dbfilename_clone = Arc::clone(&dbfilename);
+
+        let subs_channel: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
         thread::spawn(move || match connection {
             Ok(mut stream) => {
@@ -176,6 +178,7 @@ fn main() {
                                 &tcpstream_vector_clone,
                                 &master_repl_offset_clone,
                                 &shared_replica_count_clone,
+                                &subs_channel,
                             );
                         }
                         Err(e) => {
@@ -204,6 +207,7 @@ fn handle_connection(
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
     master_repl_offset: &Arc<Mutex<usize>>,
     shared_replica_count_clone: &Arc<Mutex<usize>>,
+    subs_channel: &Arc<Mutex<Vec<String>>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -448,6 +452,29 @@ fn handle_connection(
                             let _ = stream.write_all(resp.as_bytes());
                         } else {
                             let _ = stream.write_all("*0\r\n\r\n".as_bytes());
+                        }
+                    }
+                }
+
+                "subscribe" => {
+                    let mut list = subs_channel.lock().unwrap();
+
+                    match list.iter().find(|c| *c == &elements_array[1]) {
+                        Some(_) => {}
+                        None => {
+                            list.push(elements_array[1].clone());
+
+                            let resp = format!(
+                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+                                "subscribe".len(),
+                                "subscribe".to_string(),
+                                elements_array[1].len(),
+                                elements_array[1].clone(),
+                                list.len()
+                            );
+
+                            println!("[debug] resp: {:?}", resp);
+                            let _ = stream.write_all(resp.as_bytes());
                         }
                     }
                 }
