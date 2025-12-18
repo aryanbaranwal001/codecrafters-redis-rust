@@ -225,8 +225,28 @@ fn handle_connection(
                 }
 
                 "get" => {
-                    let response = commands::handle_get(elements_array, store);
-                    let _ = stream.write_all(response.as_bytes());
+                    let dir = &*dir_clone.lock().unwrap();
+                    let dbfilename = &*dbfilename_clone.lock().unwrap();
+
+                    if let Some(dir) = dir {
+                        if let Some(dbfilename) = dbfilename {
+                            let path = format!("{}/{}", dir, dbfilename);
+                            let data = fs::read(path).unwrap();
+                            let kv_arr = helper::parse_db(&data);
+
+                            let kv_pair =
+                                kv_arr.iter().find(|p| p[0] == elements_array[1]).unwrap();
+
+                            println!("[debug] kv pair: {:?}", kv_pair);
+
+                            let _ = stream.write_all(
+                                format!("${}\r\n{}\r\n", kv_pair[1].len(), kv_pair[1]).as_bytes(),
+                            );
+                        }
+                    } else {
+                        let response = commands::handle_get(elements_array, store);
+                        let _ = stream.write_all(response.as_bytes());
+                    }
                 }
 
                 "rpush" => {
