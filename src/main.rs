@@ -118,6 +118,7 @@ fn main() {
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     let subs_htable: Arc<Mutex<HashMap<String, Vec<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let geo_hmap: Arc<Mutex<HashMap<String, types::GeoSet>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -128,14 +129,16 @@ fn main() {
     for connection in listener.incoming() {
         let store_clone = Arc::clone(&store);
         let dir_clone = Arc::clone(&dir);
+        let zset_hmap = Arc::clone(&zset_hmap);
         let main_list_clone = Arc::clone(&main_list);
+        let subs_htable_clone = Arc::clone(&subs_htable);
         let dbfilename_clone = Arc::clone(&dbfilename);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
-        let subs_htable_clone = Arc::clone(&subs_htable);
+        let geo_hmap = Arc::clone(&geo_hmap);
         let channels_subscribed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::clone(&zset_hmap);
+
         thread::spawn(move || match connection {
             Ok(mut stream) => {
                 println!("[info] accepted new connection");
@@ -201,6 +204,7 @@ fn main() {
                                 &mut is_subscribed,
                                 &channels_subscribed,
                                 &zset_hmap,
+                                &geo_hmap,
                             );
                         }
                         Err(e) => {
@@ -233,6 +237,7 @@ fn handle_connection(
     is_subscribed: &mut bool,
     channels_subscribed: &Arc<Mutex<Vec<String>>>,
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    geo_hmap: &Arc<Mutex<HashMap<String, types::GeoSet>>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -807,6 +812,52 @@ fn handle_connection(
                     } else {
                         ":0\r\n".to_string()
                     };
+                    let _ = stream.write_all(resp.as_bytes());
+                }
+
+                "geoadd" => {
+                    let mut hmap = geo_hmap.lock().unwrap();
+
+                    let geo_key = &elements_array[1];
+                    let lon = elements_array[2].parse::<f64>().unwrap();
+                    let lat = elements_array[3].parse::<f64>().unwrap();
+                    let place = &elements_array[4];
+
+                    let lon_uint = ((lon + 180.0) * 360.0) * (2 ^ 20) as f64;
+                    let lat_uint = ((lat + 90.0) * 180.0) * (2 ^ 20) as f64;
+                    let gscore = (lon_uint + lat_uint) as u64;
+                    let new_geo = types::Geo {
+                        lon: lon_uint,
+                        lat: lat_uint,
+                    };
+                    let resp = if let Some(geo_set) = hmap.get_mut(geo_key) {
+                        if let Some(old_geo) = geo_set.scores.get(place) {
+                            let old_lon = old_geo.lon;
+                            let old_lat = old_geo.lat;
+
+                            let old_lon_uint = ((old_lon + 180.0) * 360.0) * (2 ^ 20) as f64;
+                            let old_lat_uint = ((old_lat + 90.0) * 180.0) * (2 ^ 20) as f64;
+
+                            let old_gscore = (old_lon_uint + old_lat_uint) as u64;
+
+                            geo_set.ordered.remove(&(old_gscore, place.clone()));
+                            geo_set.scores.insert(place.clone(), new_geo);
+                            geo_set.ordered.insert((gscore, place.clone()));
+
+                            ":0\r\n"
+                        } else {
+                            geo_set.scores.insert(place.clone(), new_geo);
+                            geo_set.ordered.insert((gscore, place.clone()));
+                            ":1\r\n"
+                        }
+                    } else {
+                        let mut geo_set = types::GeoSet::new();
+                        geo_set.scores.insert(place.clone(), new_geo);
+                        geo_set.ordered.insert((gscore, place.clone()));
+                        hmap.insert(geo_key.to_owned(), geo_set);
+                        ":1\r\n"
+                    };
+
                     let _ = stream.write_all(resp.as_bytes());
                 }
 

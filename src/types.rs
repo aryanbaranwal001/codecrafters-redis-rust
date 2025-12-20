@@ -8,6 +8,25 @@ pub struct ZSet {
     pub ordered: BTreeSet<(OrderedFloat<f64>, String)>,
 }
 
+pub struct GeoSet {
+    pub scores: HashMap<String, Geo>,
+    pub ordered: BTreeSet<(u64, String)>,
+}
+
+pub struct Geo {
+    pub lon: f64,
+    pub lat: f64,
+}
+
+impl GeoSet {
+    pub fn new() -> Self {
+        Self {
+            scores: HashMap::new(),
+            ordered: BTreeSet::new(),
+        }
+    }
+}
+
 impl ZSet {
     pub fn new() -> Self {
         Self {
