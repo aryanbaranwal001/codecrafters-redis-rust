@@ -823,6 +823,20 @@ fn handle_connection(
                     let lat = elements_array[3].parse::<f64>().unwrap();
                     let place = &elements_array[4];
 
+                    if !(lon <= 180.0 && lon >= -180.0) {
+                        let error =
+                            format!("-ERR invalid longitude,latitude pair {},{}\r\n", lon, lat);
+                        let _ = stream.write_all(error.as_bytes());
+                        return stream;
+                    }
+
+                    if !(lat <= 85.05112878 && lat >= -85.05112878) {
+                        let error =
+                            format!("-ERR invalid longitude,latitude pair {},{}\r\n", lon, lat);
+                        let _ = stream.write_all(error.as_bytes());
+                        return stream;
+                    }
+
                     let lon_uint = ((lon + 180.0) * 360.0) * (2 ^ 20) as f64;
                     let lat_uint = ((lat + 90.0) * 180.0) * (2 ^ 20) as f64;
                     let gscore = (lon_uint + lat_uint) as u64;
