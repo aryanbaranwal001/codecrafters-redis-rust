@@ -692,6 +692,50 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
+                "zrange" => {
+                    let zset_key = &elements_array[1];
+                    let start = elements_array[2].parse::<usize>().unwrap();
+                    let mut end = elements_array[3].parse::<usize>().unwrap();
+
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
+                        let sorted_set_len = zset.ordered.len();
+
+                        // ensuring start and end are valid
+
+                        if start >= sorted_set_len {
+                            let _ = stream.write_all("*0\r\n".as_bytes());
+                            return stream;
+                        }
+
+                        if end > sorted_set_len {
+                            end = sorted_set_len;
+                        }
+
+                        if start > end {
+                            let _ = stream.write_all("*0\r\n".as_bytes());
+                            return stream;
+                        }
+
+                        let vec: Vec<String> = zset
+                            .ordered
+                            .iter()
+                            .skip(start)
+                            .take(end + 1 - start)
+                            .map(|(_, member)| member.clone())
+                            .collect();
+
+                        let resp = helper::elements_arr_to_resp_arr(&vec);
+                        resp
+                    } else {
+                        let _ = stream.write_all("*0\r\n".as_bytes());
+                        return stream;
+                    };
+
+                    let _ = stream.write_all(resp.as_bytes());
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
