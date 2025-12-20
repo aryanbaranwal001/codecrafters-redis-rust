@@ -4,19 +4,17 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Condvar, Mutex};
 #[derive(Debug)]
 pub struct ZSet {
+    // store actual value
     pub scores: HashMap<String, ZSetStore>,
+
+    // store for ordering purposes
+    // can't change this because of sorted set
     pub ordered: BTreeSet<(OrderedFloat<f64>, String)>,
 }
 #[derive(Debug)]
 pub enum ZSetStore {
     Score(f64),
-    Geo(Geo),
-}
-
-#[derive(Debug)]
-pub struct Geo {
-    pub lon: f64,
-    pub lat: f64,
+    GScore(i64),
 }
 
 impl ZSet {

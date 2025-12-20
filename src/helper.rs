@@ -8,7 +8,7 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
-pub fn get_score(lon: f32, lat: f32) -> f64 {
+pub fn get_score(lon: f32, lat: f32) -> i64 {
     const MIN_LONGITUDE: f32 = -180.0;
     const MAX_LONGITUDE: f32 = 180.0;
     const MIN_LATITUDE: f32 = -85.05112878;
@@ -29,7 +29,7 @@ pub fn get_score(lon: f32, lat: f32) -> f64 {
     let nor_lat = spread_int32_to_int64(nor_lat);
 
     let lon_shifted = nor_lon << 1;
-    return (nor_lat | lon_shifted) as f64;
+    return (nor_lat | lon_shifted) as i64;
 }
 
 pub fn spread_int32_to_int64(v: i32) -> i64 {
