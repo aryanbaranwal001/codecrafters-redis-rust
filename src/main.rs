@@ -787,6 +787,29 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
+                "zrem" => {
+                    let zset_key = &elements_array[1];
+                    let member = &elements_array[2];
+
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
+                        match zset.scores.get(member) {
+                            Some(score) => {
+                                zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
+
+                                zset.scores.remove(member);
+
+                                ":1\r\n".to_string()
+                            }
+                            None => ":0\r\n".to_string(),
+                        }
+                    } else {
+                        ":0\r\n".to_string()
+                    };
+                    let _ = stream.write_all(resp.as_bytes());
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
