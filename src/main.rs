@@ -1,11 +1,11 @@
 use clap::Parser;
+use ordered_float::OrderedFloat;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
-
 mod commands;
 mod helper;
 mod types;
@@ -118,6 +118,8 @@ fn main() {
     let subs_htable: Arc<Mutex<HashMap<String, Vec<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
+    let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::new(Mutex::new(HashMap::new()));
+
     println!("[info] {} server with port number: {}", role, port);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
@@ -132,7 +134,7 @@ fn main() {
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
         let subs_htable_clone = Arc::clone(&subs_htable);
         let channels_subscribed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-
+        let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::clone(&zset_hmap);
         thread::spawn(move || match connection {
             Ok(mut stream) => {
                 println!("[info] accepted new connection");
@@ -197,6 +199,7 @@ fn main() {
                                 &subs_htable_clone,
                                 &mut is_subscribed,
                                 &channels_subscribed,
+                                &zset_hmap,
                             );
                         }
                         Err(e) => {
@@ -228,6 +231,7 @@ fn handle_connection(
     subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
     is_subscribed: &mut bool,
     channels_subscribed: &Arc<Mutex<Vec<String>>>,
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -605,6 +609,32 @@ fn handle_connection(
                         }
                         None => {}
                     }
+                }
+
+                "zadd" => {
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let zset_key = &elements_array[1];
+                    let score = elements_array[2].parse::<f64>().unwrap();
+                    let member = &elements_array[3];
+
+                    if let Some(zset) = hmap.get_mut(zset_key) {
+                        if let Some(old) = zset.scores.get(member) {
+                            let old_score = OrderedFloat(*old);
+                            zset.ordered.remove(&(old_score, member.clone()));
+                        }
+
+                        let ordered_score = OrderedFloat(score);
+                        zset.scores.insert(member.clone(), score);
+                        zset.ordered.insert((ordered_score, member.clone()));
+                    } else {
+                        let mut zset = types::ZSet::new();
+                        zset.scores.insert(member.clone(), score);
+                        let ordered_score = OrderedFloat(score);
+                        zset.ordered.insert((ordered_score, member.clone()));
+                    }
+
+                    let _ = stream.write_all(":1\r\n".as_bytes());
                 }
 
                 _ => {

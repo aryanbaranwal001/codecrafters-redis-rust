@@ -1,6 +1,21 @@
 use clap::Parser;
-use std::collections::HashMap;
+use ordered_float::OrderedFloat;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Condvar, Mutex};
+#[derive(Debug)]
+pub struct ZSet {
+    pub scores: HashMap<String, f64>,
+    pub ordered: BTreeSet<(OrderedFloat<f64>, String)>,
+}
+
+impl ZSet {
+    pub fn new() -> Self {
+        Self {
+            scores: HashMap::new(),
+            ordered: BTreeSet::new(),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 pub struct Args {
