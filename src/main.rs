@@ -694,10 +694,10 @@ fn handle_connection(
 
                 "zrange" => {
                     let zset_key = &elements_array[1];
+                    let mut hmap = zset_hmap.lock().unwrap();
+
                     let mut start = elements_array[2].parse::<i32>().unwrap();
                     let mut end = elements_array[3].parse::<i32>().unwrap();
-
-                    let mut hmap = zset_hmap.lock().unwrap();
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         let sorted_set_len = zset.ordered.len() as i32;
@@ -751,6 +751,19 @@ fn handle_connection(
                         return stream;
                     };
 
+                    let _ = stream.write_all(resp.as_bytes());
+                }
+
+                "zcard" => {
+                    let zset_key = &elements_array[1];
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
+                        let sorted_set_len = zset.ordered.len();
+                        format!(":{}\r\n", sorted_set_len)
+                    } else {
+                        ":0\r\n".to_string()
+                    };
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
