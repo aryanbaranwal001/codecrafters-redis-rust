@@ -618,23 +618,31 @@ fn handle_connection(
                     let score = elements_array[2].parse::<f64>().unwrap();
                     let member = &elements_array[3];
 
-                    if let Some(zset) = hmap.get_mut(zset_key) {
+                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         if let Some(old) = zset.scores.get(member) {
                             let old_score = OrderedFloat(*old);
                             zset.ordered.remove(&(old_score, member.clone()));
-                        }
 
-                        let ordered_score = OrderedFloat(score);
-                        zset.scores.insert(member.clone(), score);
-                        zset.ordered.insert((ordered_score, member.clone()));
+                            let ordered_score = OrderedFloat(score);
+                            zset.scores.insert(member.clone(), score);
+                            zset.ordered.insert((ordered_score, member.clone()));
+                            ":0\r\n"
+                        } else {
+                            let ordered_score = OrderedFloat(score);
+                            zset.scores.insert(member.clone(), score);
+                            zset.ordered.insert((ordered_score, member.clone()));
+                            ":1\r\n"
+                        }
                     } else {
                         let mut zset = types::ZSet::new();
                         zset.scores.insert(member.clone(), score);
                         let ordered_score = OrderedFloat(score);
                         zset.ordered.insert((ordered_score, member.clone()));
-                    }
+                        hmap.insert(zset_key.to_owned(), zset);
+                        ":1\r\n"
+                    };
 
-                    let _ = stream.write_all(":1\r\n".as_bytes());
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 _ => {
