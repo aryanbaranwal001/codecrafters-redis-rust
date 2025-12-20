@@ -118,7 +118,6 @@ fn main() {
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     let subs_htable: Arc<Mutex<HashMap<String, Vec<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
-    let geo_hmap: Arc<Mutex<HashMap<String, types::GeoSet>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -136,7 +135,6 @@ fn main() {
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
-        let geo_hmap = Arc::clone(&geo_hmap);
         let channels_subscribed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
         thread::spawn(move || match connection {
@@ -204,7 +202,6 @@ fn main() {
                                 &mut is_subscribed,
                                 &channels_subscribed,
                                 &zset_hmap,
-                                &geo_hmap,
                             );
                         }
                         Err(e) => {
@@ -237,7 +234,6 @@ fn handle_connection(
     is_subscribed: &mut bool,
     channels_subscribed: &Arc<Mutex<Vec<String>>>,
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
-    geo_hmap: &Arc<Mutex<HashMap<String, types::GeoSet>>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -626,22 +622,30 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         if let Some(old) = zset.scores.get(member) {
-                            let old_score = OrderedFloat(*old);
-                            zset.ordered.remove(&(old_score, member.clone()));
+                            match old {
+                                types::ZSetStore::Score(old) => {
+                                    let old_score = OrderedFloat(*old);
+                                    zset.ordered.remove(&(old_score, member.clone()));
+                                    let ordered_score = OrderedFloat(score);
 
-                            let ordered_score = OrderedFloat(score);
-                            zset.scores.insert(member.clone(), score);
-                            zset.ordered.insert((ordered_score, member.clone()));
-                            ":0\r\n"
+                                    zset.scores
+                                        .insert(member.clone(), types::ZSetStore::Score(score));
+                                    zset.ordered.insert((ordered_score, member.clone()));
+                                    ":0\r\n"
+                                }
+                                _ => "*-1\r\n",
+                            }
                         } else {
                             let ordered_score = OrderedFloat(score);
-                            zset.scores.insert(member.clone(), score);
+                            zset.scores
+                                .insert(member.clone(), types::ZSetStore::Score(score));
                             zset.ordered.insert((ordered_score, member.clone()));
                             ":1\r\n"
                         }
                     } else {
                         let mut zset = types::ZSet::new();
-                        zset.scores.insert(member.clone(), score);
+                        zset.scores
+                            .insert(member.clone(), types::ZSetStore::Score(score));
                         let ordered_score = OrderedFloat(score);
                         zset.ordered.insert((ordered_score, member.clone()));
                         hmap.insert(zset_key.to_owned(), zset);
@@ -656,9 +660,15 @@ fn handle_connection(
                     let member = &elements_array[2];
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let score = *match hmap.get(zset_key) {
+                    let score = match hmap.get(zset_key) {
                         Some(zset) => match zset.scores.get(member) {
-                            Some(score) => score,
+                            Some(score) => match score {
+                                &types::ZSetStore::Score(score) => score,
+                                _ => {
+                                    let _ = stream.write_all("$-1\r\n".as_bytes());
+                                    return stream;
+                                }
+                            },
                             None => {
                                 let _ = stream.write_all("$-1\r\n".as_bytes());
                                 return stream;
@@ -780,10 +790,13 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         match zset.scores.get(member) {
-                            Some(score) => {
-                                let score = format!("{}", score);
-                                format!("${}\r\n{}\r\n", score.len(), score)
-                            }
+                            Some(zset_store) => match zset_store {
+                                types::ZSetStore::Score(score) => {
+                                    let score = format!("{}", score);
+                                    format!("${}\r\n{}\r\n", score.len(), score)
+                                }
+                                _ => "$-1\r\n".to_string(),
+                            },
                             None => "$-1\r\n".to_string(),
                         }
                     } else {
@@ -800,13 +813,16 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         match zset.scores.get(member) {
-                            Some(score) => {
-                                zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
+                            Some(zset_store) => match zset_store {
+                                types::ZSetStore::Score(score) => {
+                                    zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
 
-                                zset.scores.remove(member);
+                                    zset.scores.remove(member);
 
-                                ":1\r\n".to_string()
-                            }
+                                    ":1\r\n".to_string()
+                                }
+                                _ => "$-1\r\n".to_string(),
+                            },
                             None => ":0\r\n".to_string(),
                         }
                     } else {
@@ -816,7 +832,7 @@ fn handle_connection(
                 }
 
                 "geoadd" => {
-                    let mut hmap = geo_hmap.lock().unwrap();
+                    let mut hmap = zset_hmap.lock().unwrap();
 
                     let geo_key = &elements_array[1];
                     let lon = elements_array[2].parse::<f64>().unwrap();
@@ -839,36 +855,46 @@ fn handle_connection(
 
                     let lon_uint = ((lon + 180.0) * 360.0) * (2 ^ 20) as f64;
                     let lat_uint = ((lat + 90.0) * 180.0) * (2 ^ 20) as f64;
-                    let gscore = (lon_uint + lat_uint) as u64;
+                    let gscore = lon_uint + lat_uint;
                     let new_geo = types::Geo {
                         lon: lon_uint,
                         lat: lat_uint,
                     };
-                    let resp = if let Some(geo_set) = hmap.get_mut(geo_key) {
-                        if let Some(old_geo) = geo_set.scores.get(place) {
-                            let old_lon = old_geo.lon;
-                            let old_lat = old_geo.lat;
+                    let resp = if let Some(zset) = hmap.get_mut(geo_key) {
+                        if let Some(zset_store) = zset.scores.get(place) {
+                            match zset_store {
+                                types::ZSetStore::Geo(old_geo) => {
+                                    let old_lon = old_geo.lon;
+                                    let old_lat = old_geo.lat;
 
-                            let old_lon_uint = ((old_lon + 180.0) * 360.0) * (2 ^ 20) as f64;
-                            let old_lat_uint = ((old_lat + 90.0) * 180.0) * (2 ^ 20) as f64;
+                                    let old_lon_uint =
+                                        ((old_lon + 180.0) * 360.0) * (2 ^ 20) as f64;
+                                    let old_lat_uint = ((old_lat + 90.0) * 180.0) * (2 ^ 20) as f64;
 
-                            let old_gscore = (old_lon_uint + old_lat_uint) as u64;
+                                    let old_gscore = old_lon_uint + old_lat_uint;
 
-                            geo_set.ordered.remove(&(old_gscore, place.clone()));
-                            geo_set.scores.insert(place.clone(), new_geo);
-                            geo_set.ordered.insert((gscore, place.clone()));
+                                    zset.ordered
+                                        .remove(&(OrderedFloat(old_gscore), place.clone()));
+                                    zset.scores
+                                        .insert(place.clone(), types::ZSetStore::Geo(new_geo));
+                                    zset.ordered.insert((OrderedFloat(gscore), place.clone()));
 
-                            ":0\r\n"
+                                    ":0\r\n"
+                                }
+                                _ => ":0\r\n",
+                            }
                         } else {
-                            geo_set.scores.insert(place.clone(), new_geo);
-                            geo_set.ordered.insert((gscore, place.clone()));
+                            zset.scores
+                                .insert(place.clone(), types::ZSetStore::Geo(new_geo));
+                            zset.ordered.insert((OrderedFloat(gscore), place.clone()));
                             ":1\r\n"
                         }
                     } else {
-                        let mut geo_set = types::GeoSet::new();
-                        geo_set.scores.insert(place.clone(), new_geo);
-                        geo_set.ordered.insert((gscore, place.clone()));
-                        hmap.insert(geo_key.to_owned(), geo_set);
+                        let mut zset = types::ZSet::new();
+                        zset.scores
+                            .insert(place.clone(), types::ZSetStore::Geo(new_geo));
+                        zset.ordered.insert((OrderedFloat(gscore), place.clone()));
+                        hmap.insert(geo_key.to_owned(), zset);
                         ":1\r\n"
                     };
 
