@@ -8,33 +8,33 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
-pub fn get_score(lon: f32, lat: f32) -> i64 {
-    const MIN_LONGITUDE: f32 = -180.0;
-    const MAX_LONGITUDE: f32 = 180.0;
-    const MIN_LATITUDE: f32 = -85.05112878;
-    const MAX_LATITUDE: f32 = 85.05112878;
+pub fn get_score(lon: f64, lat: f64) -> u64 {
+    const MIN_LONGITUDE: f64 = -180.0;
+    const MAX_LONGITUDE: f64 = 180.0;
+    const MIN_LATITUDE: f64 = -85.05112878;
+    const MAX_LATITUDE: f64 = 85.05112878;
 
-    const LATITUDE_RANGE: f32 = MAX_LATITUDE - MIN_LATITUDE;
-    const LONGITUDE_RANGE: f32 = MAX_LONGITUDE - MIN_LONGITUDE;
+    const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
+    const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
-    let scale = (1u64 << 26) as f32;
+    let scale = (1u64 << 26) as f64;
 
     let normalized_longitude = scale * (lon - MIN_LONGITUDE) / LONGITUDE_RANGE;
     let normalized_latitude = scale * (lat - MIN_LATITUDE) / LATITUDE_RANGE;
 
-    let nor_lon = normalized_longitude as i32;
-    let nor_lat = normalized_latitude as i32;
+    let nor_lon = normalized_longitude as u32;
+    let nor_lat = normalized_latitude as u32;
 
     let nor_lon = spread_int32_to_int64(nor_lon);
     let nor_lat = spread_int32_to_int64(nor_lat);
 
     let lon_shifted = nor_lon << 1;
-    return (nor_lat | lon_shifted) as i64;
+    return (nor_lat | lon_shifted) as u64;
 }
 
-pub fn spread_int32_to_int64(v: i32) -> i64 {
+pub fn spread_int32_to_int64(v: u32) -> u64 {
     // Ensure only lower 32 bits are non-zero.
-    let mut v = v as i64;
+    let mut v = v as u64;
     v = v & 0xFFFFFFFF;
 
     // Bitwise operations to spread 32 bits into 64 bits with zeros in-between
@@ -44,7 +44,7 @@ pub fn spread_int32_to_int64(v: i32) -> i64 {
     v = (v | (v << 2)) & 0x3333333333333333;
     v = (v | (v << 1)) & 0x5555555555555555;
 
-    return v as i64;
+    return v as u64;
 }
 
 pub fn alread_present(subscribers: &Vec<TcpStream>, stream: &TcpStream) -> bool {

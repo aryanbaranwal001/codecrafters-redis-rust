@@ -856,7 +856,7 @@ fn handle_connection(
                         return stream;
                     }
 
-                    let gscore = helper::get_score(lon as f32, lat as f32);
+                    let gscore = helper::get_score(lon, lat);
 
                     let resp = if let Some(zset) = hmap.get_mut(geo_key) {
                         if let Some(zset_store) = zset.scores.get(place) {

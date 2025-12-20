@@ -14,7 +14,7 @@ pub struct ZSet {
 #[derive(Debug)]
 pub enum ZSetStore {
     Score(f64),
-    GScore(i64),
+    GScore(u64),
 }
 
 impl ZSet {
