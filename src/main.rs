@@ -694,15 +694,31 @@ fn handle_connection(
 
                 "zrange" => {
                     let zset_key = &elements_array[1];
-                    let start = elements_array[2].parse::<usize>().unwrap();
-                    let mut end = elements_array[3].parse::<usize>().unwrap();
+                    let mut start = elements_array[2].parse::<i32>().unwrap();
+                    let mut end = elements_array[3].parse::<i32>().unwrap();
 
                     let mut hmap = zset_hmap.lock().unwrap();
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        let sorted_set_len = zset.ordered.len();
+                        let sorted_set_len = zset.ordered.len() as i32;
 
                         // ensuring start and end are valid
+
+                        if start < 0 {
+                            if start < -1 * sorted_set_len {
+                                start = 0;
+                            } else {
+                                start = sorted_set_len + -1 * ((-1 * start) % sorted_set_len);
+                            }
+                        }
+
+                        if end < 0 {
+                            if end < -1 * sorted_set_len {
+                                end = 0;
+                            } else {
+                                end = sorted_set_len + -1 * ((-1 * end) % sorted_set_len);
+                            }
+                        }
 
                         if start >= sorted_set_len {
                             let _ = stream.write_all("*0\r\n".as_bytes());
@@ -718,6 +734,8 @@ fn handle_connection(
                             return stream;
                         }
 
+                        let start = start as usize;
+                        let end = end as usize;
                         let vec: Vec<String> = zset
                             .ordered
                             .iter()
