@@ -893,6 +893,38 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
+                "geopos" => {
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let geo_key = &elements_array[1];
+                    let places = &elements_array[2..];
+
+                    let mut coords: String = format!("*{}\r\n", places.len());
+
+                    for place in places {
+                        let resp = if let Some(zset) = hmap.get_mut(geo_key) {
+                            if let Some(zset_store) = zset.scores.get(place) {
+                                match zset_store {
+                                    types::ZSetStore::GScore(_gscore) => {
+                                        // gscore and will later decode this
+
+                                        "*2\r\n$1\r\n0\r\n$1\r\n0\r\n"
+                                    }
+                                    _ => ":0\r\n",
+                                }
+                            } else {
+                                "*-1\r\n"
+                            }
+                        } else {
+                            "*-1\r\n"
+                        };
+
+                        coords.push_str(&resp);
+                    }
+
+                    let _ = stream.write_all(coords.as_bytes());
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
