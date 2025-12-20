@@ -624,7 +624,7 @@ fn handle_connection(
                         if let Some(old) = zset.scores.get(member) {
                             match old {
                                 types::ZSetStore::Score(old) => {
-                                    let old_score = OrderedFloat(*old);
+                                    let old_score = OrderedFloat(*old as f64);
                                     zset.ordered.remove(&(old_score, member.clone()));
                                     let ordered_score = OrderedFloat(score);
 
@@ -853,13 +853,9 @@ fn handle_connection(
                         return stream;
                     }
 
-                    let lon_uint = ((lon + 180.0) * 360.0) * (2 ^ 20) as f64;
-                    let lat_uint = ((lat + 90.0) * 180.0) * (2 ^ 20) as f64;
-                    let gscore = lon_uint + lat_uint;
-                    let new_geo = types::Geo {
-                        lon: lon_uint,
-                        lat: lat_uint,
-                    };
+                    let gscore = helper::get_score(lon as f32, lat as f32);
+
+                    let new_geo = types::Geo { lon, lat };
                     let resp = if let Some(zset) = hmap.get_mut(geo_key) {
                         if let Some(zset_store) = zset.scores.get(place) {
                             match zset_store {
@@ -867,11 +863,8 @@ fn handle_connection(
                                     let old_lon = old_geo.lon;
                                     let old_lat = old_geo.lat;
 
-                                    let old_lon_uint =
-                                        ((old_lon + 180.0) * 360.0) * (2 ^ 20) as f64;
-                                    let old_lat_uint = ((old_lat + 90.0) * 180.0) * (2 ^ 20) as f64;
-
-                                    let old_gscore = old_lon_uint + old_lat_uint;
+                                    let old_gscore =
+                                        helper::get_score(old_lon as f32, old_lat as f32);
 
                                     zset.ordered
                                         .remove(&(OrderedFloat(old_gscore), place.clone()));
