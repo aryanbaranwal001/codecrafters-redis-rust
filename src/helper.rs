@@ -8,15 +8,46 @@ use std::{collections::HashMap, time::Instant};
 use crate::commands;
 use crate::types;
 
+const MIN_LONGITUDE: f64 = -180.0;
+const MAX_LONGITUDE: f64 = 180.0;
+const MIN_LATITUDE: f64 = -85.05112878;
+const MAX_LATITUDE: f64 = 85.05112878;
+
+const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
+const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
+
+pub fn get_coordinates(geo_code: u64) -> (f64, f64) {
+    let y = geo_code >> 1;
+    let x = geo_code;
+
+    let grid_latitude_number = compact_int64_to_int32(x as i64) as f64;
+    let grid_longitude_number = compact_int64_to_int32(y as i64) as f64;
+
+    let scale = (1u64 << 26) as f64;
+
+    let grid_latitude_min = MIN_LATITUDE + LATITUDE_RANGE * (grid_latitude_number / scale);
+    let grid_latitude_max = MIN_LATITUDE + LATITUDE_RANGE * ((grid_latitude_number + 1.0) / scale);
+    let grid_longitude_min = MIN_LONGITUDE + LONGITUDE_RANGE * (grid_longitude_number / scale);
+    let grid_longitude_max =
+        MIN_LONGITUDE + LONGITUDE_RANGE * ((grid_longitude_number + 1.0) / scale);
+
+    let latitude = (grid_latitude_min + grid_latitude_max) / 2.0;
+    let longitude = (grid_longitude_min + grid_longitude_max) / 2.0;
+    return (latitude, longitude);
+}
+
+fn compact_int64_to_int32(v: i64) -> i32 {
+    let mut v = v & 0x5555555555555555;
+
+    v = (v | (v >> 1)) & 0x3333333333333333;
+    v = (v | (v >> 2)) & 0x0F0F0F0F0F0F0F0F;
+    v = (v | (v >> 4)) & 0x00FF00FF00FF00FF;
+    v = (v | (v >> 8)) & 0x0000FFFF0000FFFF;
+    v = (v | (v >> 16)) & 0x00000000FFFFFFFF;
+    return v as i32;
+}
+
 pub fn get_score(lon: f64, lat: f64) -> u64 {
-    const MIN_LONGITUDE: f64 = -180.0;
-    const MAX_LONGITUDE: f64 = 180.0;
-    const MIN_LATITUDE: f64 = -85.05112878;
-    const MAX_LATITUDE: f64 = 85.05112878;
-
-    const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
-    const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
-
     let scale = (1u64 << 26) as f64;
 
     let normalized_longitude = scale * (lon - MIN_LONGITUDE) / LONGITUDE_RANGE;
