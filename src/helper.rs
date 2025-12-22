@@ -16,6 +16,29 @@ const MAX_LATITUDE: f64 = 85.05112878;
 const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
 const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
+pub fn haversine(coords: [[String; 2]; 2]) -> String {
+    let lon1 = coords[0][0].parse::<f64>().unwrap();
+    let lat1 = coords[0][1].parse::<f64>().unwrap();
+    let lon2 = coords[1][0].parse::<f64>().unwrap();
+    let lat2 = coords[1][1].parse::<f64>().unwrap();
+    let r: f64 = 6372797.560856;
+
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+
+    let lat1 = lat1.to_radians();
+    let lat2 = lat2.to_radians();
+
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+
+    let c = 2.0 * a.sqrt().asin();
+
+    let dist = format!("{}", r * c);
+
+    let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
+    resp
+}
+
 pub fn get_coordinates(geo_code: u64) -> (f64, f64) {
     let y = geo_code >> 1;
     let x = geo_code;
@@ -52,7 +75,6 @@ pub fn get_score(lon: f64, lat: f64) -> u64 {
 
     let normalized_longitude = scale * (lon - MIN_LONGITUDE) / LONGITUDE_RANGE;
     let normalized_latitude = scale * (lat - MIN_LATITUDE) / LATITUDE_RANGE;
-
     let nor_lon = normalized_longitude as u32;
     let nor_lat = normalized_latitude as u32;
 

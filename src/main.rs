@@ -926,6 +926,48 @@ fn handle_connection(
 
                     let _ = stream.write_all(coords.as_bytes());
                 }
+                "geodist" => {
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let geo_key = &elements_array[1];
+                    let places = &elements_array[2..4];
+
+                    let mut coords: [[String; 2]; 2] = [
+                        [String::new(), String::new()],
+                        [String::new(), String::new()],
+                    ];
+
+                    let mut c = 0;
+                    for place in places {
+                        let resp = if let Some(zset) = hmap.get_mut(geo_key) {
+                            if let Some(zset_store) = zset.scores.get(place) {
+                                match zset_store {
+                                    types::ZSetStore::Score(geo_code) => {
+                                        println!("[debug] gscore: {}", geo_code);
+                                        // gscore and will later decode this
+                                        let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+                                        let lon = format!("{}", lon);
+                                        let lat = format!("{}", lat);
+                                        [lon, lat]
+                                    }
+                                }
+                            } else {
+                                println!("[error] coords do not exists");
+                                return stream;
+                            }
+                        } else {
+                            println!("[error] coords do not exists");
+                            return stream;
+                        };
+
+                        coords[c] = resp;
+                        c += 1;
+                    }
+
+                    // I have the coords now
+                    let resp = helper::haversine(coords);
+                    let _ = stream.write_all(resp.as_bytes());
+                }
 
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
