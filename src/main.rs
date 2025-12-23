@@ -1018,6 +1018,14 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
+                "acl" => {
+                    let whoami = &elements_array[1];
+
+                    if whoami.to_ascii_lowercase() == "whoami" {
+                        let _ = stream.write_all("$7\r\ndefault\r\n".as_bytes());
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
