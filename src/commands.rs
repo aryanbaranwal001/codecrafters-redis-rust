@@ -1,3 +1,4 @@
+use ordered_float::OrderedFloat;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -828,4 +829,36 @@ pub fn handle_unsubscribe(
     } else {
         "-ERR channel doesn't exists".to_string()
     }
+}
+
+pub fn handle_zadd(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let zset_key = &elems[1];
+    let score = elems[2].parse::<f64>().unwrap();
+    let member = &elems[3];
+
+    let ordered_score = OrderedFloat(score);
+
+    let zset = hmap
+        .entry(zset_key.clone())
+        .or_insert_with(|| types::ZSet::new());
+
+    let is_new = match zset.scores.insert(member.clone(), score) {
+        Some(old_score) => {
+            zset.ordered
+                .remove(&(OrderedFloat(old_score), member.clone()));
+            false
+        }
+        None => true,
+    };
+
+    zset.ordered.insert((ordered_score, member.clone()));
+
+    let resp = if is_new { ":1\r\n" } else { ":0\r\n" };
+
+    resp.to_string()
 }

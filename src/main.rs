@@ -419,36 +419,7 @@ fn handle_connection(
                 }
 
                 "zadd" => {
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let zset_key = &elems[1];
-                    let score = elems[2].parse::<f64>().unwrap();
-                    let member = &elems[3];
-
-                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        if let Some(old) = zset.scores.get(member) {
-                            let old_score = OrderedFloat(*old as f64);
-                            zset.ordered.remove(&(old_score, member.clone()));
-                            let ordered_score = OrderedFloat(score);
-
-                            zset.scores.insert(member.clone(), score);
-                            zset.ordered.insert((ordered_score, member.clone()));
-                            ":0\r\n"
-                        } else {
-                            let ordered_score = OrderedFloat(score);
-                            zset.scores.insert(member.clone(), score);
-                            zset.ordered.insert((ordered_score, member.clone()));
-                            ":1\r\n"
-                        }
-                    } else {
-                        let mut zset = types::ZSet::new();
-                        zset.scores.insert(member.clone(), score);
-                        let ordered_score = OrderedFloat(score);
-                        zset.ordered.insert((ordered_score, member.clone()));
-                        hmap.insert(zset_key.to_owned(), zset);
-                        ":1\r\n"
-                    };
-
+                    let resp = commands::handle_zadd(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
