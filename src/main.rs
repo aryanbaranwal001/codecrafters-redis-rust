@@ -1020,14 +1020,26 @@ fn handle_connection(
 
                 "acl" => {
                     let category = &elements_array[1];
+                    let flag = elements_array.get(2);
 
                     if category.to_ascii_lowercase() == "whoami" {
                         let _ = stream.write_all("$7\r\ndefault\r\n".as_bytes());
                     }
 
                     if category.to_ascii_lowercase() == "getuser" {
-                        let resp = format!("*2\r\n$5\r\nflags\r\n*0\r\n");
-                        let _ = stream.write_all(resp.as_bytes());
+                        match flag {
+                            Some(flag) => {
+                                if flag.to_ascii_lowercase() == "default" {
+                                    let resp =
+                                        format!("*2\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n");
+                                    let _ = stream.write_all(resp.as_bytes());
+                                }
+                            }
+                            None => {
+                                let resp = format!("*2\r\n$5\r\nflags\r\n*0\r\n");
+                                let _ = stream.write_all(resp.as_bytes());
+                            }
+                        }
                     }
                 }
 
