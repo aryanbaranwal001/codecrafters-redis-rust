@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, thread};
 
 use crate::types::UserInfo;
@@ -56,12 +55,11 @@ fn main() {
             // run the left commands
             let mut counter = 0;
             while counter < left_commands.len() {
-                let (elements_array, count) =
-                    helper::get_elements_array_with_counter(counter, &left_commands);
+                let (elems, count) = helper::get_elems_with_counter(counter, &left_commands);
 
                 master_stream = helper::handle_connection_as_slave_with_master(
                     master_stream,
-                    elements_array.clone(),
+                    elems.clone(),
                     &store_clone,
                     &main_list_clone,
                     "role:slave",
@@ -87,12 +85,12 @@ fn main() {
 
                         let mut counter = 0;
                         while counter < buffer_checked.len() {
-                            let (elements_array, count) =
-                                helper::get_elements_array_with_counter(counter, &buffer_checked);
+                            let (elems, count) =
+                                helper::get_elems_with_counter(counter, &buffer_checked);
 
                             master_stream = helper::handle_connection_as_slave_with_master(
                                 master_stream,
-                                elements_array.clone(),
+                                elems.clone(),
                                 &store_clone,
                                 &main_list_clone,
                                 "role:slave",
@@ -186,10 +184,10 @@ fn main() {
                                 continue;
                             }
 
-                            let elements_array = helper::get_elements_array(&buffer[..n]);
+                            let elems = helper::get_elems(&buffer[..n]);
 
                             let is_write_cmd = matches!(
-                                elements_array[0].to_ascii_lowercase().as_str(),
+                                elems[0].to_ascii_lowercase().as_str(),
                                 "set" | "rpush" | "lpush" | "lpop" | "blpop" | "xadd" | "incr"
                             );
 
@@ -252,12 +250,12 @@ fn handle_connection(
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
-            let mut elements_array = helper::get_elements_array(bytes_received);
-            println!("[info] elements array: {:?}", elements_array);
+            let mut elems = helper::get_elems(bytes_received);
+            println!("[info] elements array: {:?}", elems);
 
-            match elements_array[0].to_ascii_lowercase().as_str() {
+            match elems[0].to_ascii_lowercase().as_str() {
                 "echo" => {
-                    let response = commands::handle_echo(elements_array);
+                    let response = commands::handle_echo(elems);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
@@ -266,132 +264,67 @@ fn handle_connection(
                 }
 
                 "set" => {
-                    let response = commands::handle_set(elements_array, store);
+                    let response = commands::handle_set(elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "get" => {
-                    let dir = &*dir_clone.lock().unwrap();
-                    let dbfilename = &*dbfilename_clone.lock().unwrap();
-
-                    if let Some(dir) = dir {
-                        if let Some(dbfilename) = dbfilename {
-                            let path = format!("{}/{}", dir, dbfilename);
-                            let data = fs::read(path).unwrap();
-                            let (kv_arr, kv_arr_fc, kv_arr_fd) = helper::parse_db(&data);
-
-                            if let Some(kv_pair) = kv_arr.iter().find(|p| p[0] == elements_array[1])
-                            {
-                                let _ = stream.write_all(
-                                    format!("${}\r\n{}\r\n", kv_pair[1].len(), kv_pair[1])
-                                        .as_bytes(),
-                                );
-                            }
-
-                            if let Some(kv_pair_fc) =
-                                kv_arr_fc.iter().find(|p| p[0] == elements_array[1])
-                            {
-                                let expiry = kv_pair_fc[2].parse::<u64>().unwrap();
-                                let now = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis();
-
-                                if now as u64 > expiry {
-                                    let _ = stream.write_all("$-1\r\n".as_bytes());
-                                } else {
-                                    let _ = stream.write_all(
-                                        format!(
-                                            "${}\r\n{}\r\n",
-                                            kv_pair_fc[1].len(),
-                                            kv_pair_fc[1]
-                                        )
-                                        .as_bytes(),
-                                    );
-                                }
-                            }
-
-                            if let Some(kv_pair_fd) =
-                                kv_arr_fd.iter().find(|p| p[0] == elements_array[1])
-                            {
-                                let expiry = kv_pair_fd[2].parse::<u32>().unwrap();
-                                let now = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
-
-                                if now as u32 > expiry {
-                                    let _ = stream.write_all("$-1\r\n".as_bytes());
-                                } else {
-                                    let _ = stream.write_all(
-                                        format!(
-                                            "${}\r\n{}\r\n",
-                                            kv_pair_fd[1].len(),
-                                            kv_pair_fd[1]
-                                        )
-                                        .as_bytes(),
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        let response = commands::handle_get(elements_array, store);
-                        let _ = stream.write_all(response.as_bytes());
-                    }
+                    let response = commands::handle_get(dir_clone, dbfilename_clone, &elems, store);
+                    let _ = stream.write_all(response.as_bytes());
                 }
 
                 "rpush" => {
-                    let response = commands::handle_rpush(elements_array, main_list_store);
+                    let response = commands::handle_rpush(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lpush" => {
-                    let response = commands::handle_lpush(elements_array, main_list_store);
+                    let response = commands::handle_lpush(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lrange" => {
-                    let response = commands::handle_lrange(elements_array, main_list_store);
+                    let response = commands::handle_lrange(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "llen" => {
-                    let response = commands::handle_llen(elements_array, main_list_store);
+                    let response = commands::handle_llen(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "lpop" => {
-                    let response = commands::handle_lpop(elements_array, main_list_store);
+                    let response = commands::handle_lpop(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "blpop" => {
-                    let response = commands::handle_blpop(elements_array, main_list_store);
+                    let response = commands::handle_blpop(elems, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "type" => {
-                    let response = commands::handle_type(elements_array, store);
+                    let response = commands::handle_type(elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "xadd" => {
-                    let response = commands::handle_xadd(&mut elements_array, store);
+                    let response = commands::handle_xadd(&mut elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "xrange" => {
-                    let response = commands::handle_xrange(&mut elements_array, store);
+                    let response = commands::handle_xrange(&mut elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "xread" => {
-                    let response = commands::handle_xread(&mut elements_array, store);
+                    let response = commands::handle_xread(&mut elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
                 "incr" => {
-                    let response = commands::handle_incr(&mut elements_array, store);
+                    let response = commands::handle_incr(&mut elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
 
@@ -410,14 +343,14 @@ fn handle_connection(
                 }
 
                 "info" => {
-                    if let Some(resp) = commands::handle_info(&elements_array, role) {
+                    if let Some(resp) = commands::handle_info(&elems, role) {
                         let _ = stream.write_all(resp.as_bytes());
                     };
                 }
 
                 "replconf" => {
                     if let Some(resp) = commands::handle_replconf(
-                        &elements_array,
+                        &elems,
                         master_repl_offset,
                         shared_replica_count_clone,
                     ) {
@@ -442,7 +375,7 @@ fn handle_connection(
 
                 "wait" => {
                     let resp = commands::handle_wait(
-                        &elements_array,
+                        &elems,
                         tcpstream_vector_clone,
                         master_repl_offset,
                         shared_replica_count_clone,
@@ -450,8 +383,8 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
                 "config" => {
-                    if elements_array[1].to_ascii_lowercase() == "get" {
-                        match elements_array[2].to_ascii_lowercase().as_str() {
+                    if elems[1].to_ascii_lowercase() == "get" {
+                        match elems[2].to_ascii_lowercase().as_str() {
                             "dir" => {
                                 let dir = &dir_clone.lock().unwrap();
                                 if let Some(dir) = dir.as_ref() {
@@ -480,7 +413,7 @@ fn handle_connection(
                     let path =
                         format!("{}/{}", dir.as_ref().unwrap(), dbfilename.as_ref().unwrap());
 
-                    if elements_array[1] == "*" {
+                    if elems[1] == "*" {
                         if let Some(data) = fs::read(path).ok() {
                             let kv_arr = helper::parse_rdb_get_kv(&data);
                             let mut k_arr: Vec<String> = Vec::new();
@@ -503,29 +436,26 @@ fn handle_connection(
                     // add channel to subscribed channels vec
                     let mut subs_channels = channels_subscribed.lock().unwrap();
 
-                    match subs_channels
-                        .iter()
-                        .find(|channel| *channel == &elements_array[1])
-                    {
+                    match subs_channels.iter().find(|channel| *channel == &elems[1]) {
                         Some(_) => {
                             // channel already added to list
                         }
                         None => {
                             // channel not added to list
-                            subs_channels.push(elements_array[1].clone());
+                            subs_channels.push(elems[1].clone());
                         }
                     }
 
                     //
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             if helper::alread_present(subscribers, &stream) {
                                 let resp = format!(
                                     "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                     "subscribe".len(),
                                     "subscribe".to_string(),
-                                    &elements_array[1].len(),
-                                    &elements_array[1].clone(),
+                                    &elems[1].len(),
+                                    &elems[1].clone(),
                                     subs_channels.len()
                                 );
 
@@ -538,8 +468,8 @@ fn handle_connection(
                                     "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                     "subscribe".len(),
                                     "subscribe".to_string(),
-                                    elements_array[1].len(),
-                                    elements_array[1].clone(),
+                                    elems[1].len(),
+                                    elems[1].clone(),
                                     subs_channels.len()
                                 );
 
@@ -555,12 +485,12 @@ fn handle_connection(
                                 "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                 "subscribe".len(),
                                 "subscribe".to_string(),
-                                elements_array[1].len(),
-                                elements_array[1].clone(),
+                                elems[1].len(),
+                                elems[1].clone(),
                                 subs_channels.len()
                             );
 
-                            map.insert(elements_array[1].clone(), subscribers);
+                            map.insert(elems[1].clone(), subscribers);
 
                             println!("[debug] resp when channel doesn't exists: {:?}", resp);
                             let _ = stream.write_all(resp.as_bytes());
@@ -573,15 +503,12 @@ fn handle_connection(
                 "publish" => {
                     let mut map = subs_htable.lock().unwrap();
 
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             let subs_len = subscribers.len();
                             for subscriber in subscribers {
-                                let arr = vec![
-                                    "message".to_string(),
-                                    elements_array[1].clone(),
-                                    elements_array[2].clone(),
-                                ];
+                                let arr =
+                                    vec!["message".to_string(), elems[1].clone(), elems[2].clone()];
                                 let resp = helper::elements_arr_to_resp_arr(&arr);
                                 let _ = subscriber.write_all(resp.as_bytes());
                             }
@@ -598,12 +525,12 @@ fn handle_connection(
                     // remove from channels list
                     let index = subs_channels
                         .iter()
-                        .position(|channel| *channel == elements_array[1])
+                        .position(|channel| *channel == elems[1])
                         .unwrap();
                     subs_channels.remove(index);
 
                     // remove from subs_htable
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             let index = subscribers
                                 .iter()
@@ -617,8 +544,8 @@ fn handle_connection(
                                 "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                 "unsubscribe".len(),
                                 "unsubscribe",
-                                &elements_array[1].len(),
-                                &elements_array[1],
+                                &elems[1].len(),
+                                &elems[1],
                                 subs_channels.len()
                             );
 
@@ -631,9 +558,9 @@ fn handle_connection(
                 "zadd" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let zset_key = &elements_array[1];
-                    let score = elements_array[2].parse::<f64>().unwrap();
-                    let member = &elements_array[3];
+                    let zset_key = &elems[1];
+                    let score = elems[2].parse::<f64>().unwrap();
+                    let member = &elems[3];
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         if let Some(old) = zset.scores.get(member) {
@@ -663,8 +590,8 @@ fn handle_connection(
                 }
 
                 "zrank" => {
-                    let zset_key = &elements_array[1];
-                    let member = &elements_array[2];
+                    let zset_key = &elems[1];
+                    let member = &elems[2];
                     let mut hmap = zset_hmap.lock().unwrap();
 
                     let score = *match hmap.get(zset_key) {
@@ -709,11 +636,11 @@ fn handle_connection(
                 }
 
                 "zrange" => {
-                    let zset_key = &elements_array[1];
+                    let zset_key = &elems[1];
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let mut start = elements_array[2].parse::<i32>().unwrap();
-                    let mut end = elements_array[3].parse::<i32>().unwrap();
+                    let mut start = elems[2].parse::<i32>().unwrap();
+                    let mut end = elems[3].parse::<i32>().unwrap();
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         let sorted_set_len = zset.ordered.len() as i32;
@@ -771,7 +698,7 @@ fn handle_connection(
                 }
 
                 "zcard" => {
-                    let zset_key = &elements_array[1];
+                    let zset_key = &elems[1];
                     let mut hmap = zset_hmap.lock().unwrap();
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
@@ -784,8 +711,8 @@ fn handle_connection(
                 }
 
                 "zscore" => {
-                    let zset_key = &elements_array[1];
-                    let member = &elements_array[2];
+                    let zset_key = &elems[1];
+                    let member = &elems[2];
 
                     let mut hmap = zset_hmap.lock().unwrap();
 
@@ -804,8 +731,8 @@ fn handle_connection(
                 }
 
                 "zrem" => {
-                    let zset_key = &elements_array[1];
-                    let member = &elements_array[2];
+                    let zset_key = &elems[1];
+                    let member = &elems[2];
 
                     let mut hmap = zset_hmap.lock().unwrap();
 
@@ -829,10 +756,10 @@ fn handle_connection(
                 "geoadd" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let geo_key = &elements_array[1];
-                    let lon = elements_array[2].parse::<f64>().unwrap();
-                    let lat = elements_array[3].parse::<f64>().unwrap();
-                    let place = &elements_array[4];
+                    let geo_key = &elems[1];
+                    let lon = elems[2].parse::<f64>().unwrap();
+                    let lat = elems[3].parse::<f64>().unwrap();
+                    let place = &elems[4];
 
                     if !(lon <= 180.0 && lon >= -180.0) {
                         let error =
@@ -880,8 +807,8 @@ fn handle_connection(
                 "geopos" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let geo_key = &elements_array[1];
-                    let places = &elements_array[2..];
+                    let geo_key = &elems[1];
+                    let places = &elems[2..];
 
                     let mut coords: String = format!("*{}\r\n", places.len());
 
@@ -919,8 +846,8 @@ fn handle_connection(
                 "geodist" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let geo_key = &elements_array[1];
-                    let places = &elements_array[2..4];
+                    let geo_key = &elems[1];
+                    let places = &elems[2..4];
 
                     let mut coords: [[String; 2]; 2] = [
                         [String::new(), String::new()],
@@ -960,12 +887,12 @@ fn handle_connection(
                 "geosearch" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let geo_key = &elements_array[1];
+                    let geo_key = &elems[1];
 
-                    let lon_given = &elements_array[3].clone();
-                    let lat_given = &elements_array[4].clone();
+                    let lon_given = &elems[3].clone();
+                    let lat_given = &elems[4].clone();
 
-                    let dist_given = &elements_array[6].parse::<f64>().unwrap();
+                    let dist_given = &elems[6].parse::<f64>().unwrap();
 
                     let mut places: Vec<String> = Vec::new();
 
@@ -1000,7 +927,7 @@ fn handle_connection(
                 }
 
                 "acl" => {
-                    let category = &elements_array[1].to_ascii_lowercase();
+                    let category = &elems[1].to_ascii_lowercase();
 
                     let mut userpw_hmap = userpw_hmap_clone.lock().unwrap();
 
@@ -1027,7 +954,7 @@ fn handle_connection(
                         }
                     }
 
-                    let user = elements_array.get(2);
+                    let user = elems.get(2);
 
                     if category == "getuser" {
                         match user {
@@ -1060,8 +987,8 @@ fn handle_connection(
                     if category == "setuser" {
                         let mut pw_vec: Vec<[u8; 32]> = Vec::new();
 
-                        let username = elements_array[2].clone();
-                        let password = elements_array[3].as_bytes()[1..].to_vec();
+                        let username = elems[2].clone();
+                        let password = elems[3].as_bytes()[1..].to_vec();
                         let hash = Sha256::digest(password).as_slice().try_into().unwrap();
 
                         pw_vec.push(hash);
@@ -1077,8 +1004,8 @@ fn handle_connection(
 
                 "auth" => {
                     let mut userinfo = user_guard.lock().unwrap();
-                    let user = &elements_array[1];
-                    let password = &elements_array[2].as_bytes();
+                    let user = &elems[1];
+                    let password = &elems[2].as_bytes();
 
                     let pw = Sha256::digest(password);
                     let pw: &[u8] = pw.as_slice().try_into().unwrap();

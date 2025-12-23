@@ -32,13 +32,12 @@ pub struct Args {
     pub port: Option<u32>,
     #[arg(short, long)]
     pub replicaof: Option<String>,
-    #[arg(short, long)]
+    #[arg(long)]
     pub dir: Option<String>,
-    #[arg(short, long)]
+    #[arg(long)]
     pub dbfilename: Option<String>,
 }
 
-// #[derive(Clone)]
 #[derive(Debug)]
 pub enum StoredValue {
     String(String),

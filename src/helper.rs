@@ -111,38 +111,35 @@ pub fn handle_subscribed_mode(
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
-            let elements_array = get_elements_array(&bytes_received);
+            let elems = get_elems(&bytes_received);
 
-            match elements_array[0].to_ascii_lowercase().as_str() {
+            match elems[0].to_ascii_lowercase().as_str() {
                 "subscribe" => {
                     let mut map = subs_htable.lock().unwrap();
 
                     // add channel to subscribed channels vec
                     let mut subs_channels = channels_subscribed.lock().unwrap();
 
-                    match subs_channels
-                        .iter()
-                        .find(|channel| *channel == &elements_array[1])
-                    {
+                    match subs_channels.iter().find(|channel| *channel == &elems[1]) {
                         Some(_) => {
                             // channel already added to list
                         }
                         None => {
                             // channel not added to list
-                            subs_channels.push(elements_array[1].clone());
+                            subs_channels.push(elems[1].clone());
                         }
                     }
 
                     //
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             if alread_present(subscribers, &stream) {
                                 let resp = format!(
                                     "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                     "subscribe".len(),
                                     "subscribe".to_string(),
-                                    &elements_array[1].len(),
-                                    &elements_array[1].clone(),
+                                    &elems[1].len(),
+                                    &elems[1].clone(),
                                     subs_channels.len()
                                 );
 
@@ -155,8 +152,8 @@ pub fn handle_subscribed_mode(
                                     "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                     "subscribe".len(),
                                     "subscribe".to_string(),
-                                    elements_array[1].len(),
-                                    elements_array[1].clone(),
+                                    elems[1].len(),
+                                    elems[1].clone(),
                                     subs_channels.len()
                                 );
 
@@ -172,12 +169,12 @@ pub fn handle_subscribed_mode(
                                 "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                 "subscribe".len(),
                                 "subscribe".to_string(),
-                                elements_array[1].len(),
-                                elements_array[1].clone(),
+                                elems[1].len(),
+                                elems[1].clone(),
                                 subs_channels.len()
                             );
 
-                            map.insert(elements_array[1].clone(), subscribers);
+                            map.insert(elems[1].clone(), subscribers);
 
                             println!("[debug] resp when channel doesn't exists: {:?}", resp);
                             let _ = stream.write_all(resp.as_bytes());
@@ -190,15 +187,12 @@ pub fn handle_subscribed_mode(
                 "publish" => {
                     let mut map = subs_htable.lock().unwrap();
 
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             let subs_len = subscribers.len();
                             for subscriber in subscribers {
-                                let arr = vec![
-                                    "message".to_string(),
-                                    elements_array[1].clone(),
-                                    elements_array[2].clone(),
-                                ];
+                                let arr =
+                                    vec!["message".to_string(), elems[1].clone(), elems[2].clone()];
                                 let resp = elements_arr_to_resp_arr(&arr);
                                 let _ = subscriber.write_all(resp.as_bytes());
                             }
@@ -215,12 +209,12 @@ pub fn handle_subscribed_mode(
                     // remove from channels list
                     let index = subs_channels
                         .iter()
-                        .position(|channel| *channel == elements_array[1])
+                        .position(|channel| *channel == elems[1])
                         .unwrap();
                     subs_channels.remove(index);
 
                     // remove from subs_htable
-                    match map.get_mut(&elements_array[1]) {
+                    match map.get_mut(&elems[1]) {
                         Some(subscribers) => {
                             let index = subscribers
                                 .iter()
@@ -234,8 +228,8 @@ pub fn handle_subscribed_mode(
                                 "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
                                 "unsubscribe".len(),
                                 "unsubscribe",
-                                &elements_array[1].len(),
-                                &elements_array[1],
+                                &elems[1].len(),
+                                &elems[1],
                                 subs_channels.len()
                             );
 
@@ -251,7 +245,7 @@ pub fn handle_subscribed_mode(
                 _ => {
                     let error = format!(
                         "-ERR Can't execute '{}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
-                        elements_array[0]
+                        elems[0]
                     );
                     let _ = stream.write_all(error.as_bytes());
                 }
@@ -375,9 +369,9 @@ fn parse_kv(counter: usize, data: &Vec<u8>) -> (usize, Vec<u8>) {
     (c, kv)
 }
 
-pub fn elements_arr_to_resp_arr(elements_array: &Vec<String>) -> String {
-    let mut resp = format!("*{}\r\n", elements_array.len());
-    for item in elements_array {
+pub fn elements_arr_to_resp_arr(elems: &Vec<String>) -> String {
+    let mut resp = format!("*{}\r\n", elems.len());
+    for item in elems {
         resp.push_str(&format!("${}\r\n{}\r\n", item.len(), item));
     }
     resp
@@ -400,7 +394,7 @@ pub fn skip_rdb_if_present(buf: &[u8]) -> &[u8] {
 }
 
 /// get elements array with offset after parsing resp string
-pub fn get_elements_array_with_counter(
+pub fn get_elems_with_counter(
     starting_count: usize,
     bytes_received: &[u8],
 ) -> (Vec<String>, usize) {
@@ -409,7 +403,7 @@ pub fn get_elements_array_with_counter(
 }
 
 /// get elements array from resp string
-pub fn get_elements_array(bytes_received: &[u8]) -> Vec<String> {
+pub fn get_elems(bytes_received: &[u8]) -> Vec<String> {
     let (no_of_elements, offset) = parse_number(bytes_received, 0);
     return parsing_elements(bytes_received, offset, no_of_elements).0;
 }
@@ -423,15 +417,15 @@ pub fn handle_other_clients_as_slave(
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
-            let elements_array = get_elements_array(&bytes_received);
+            let elems = get_elems(&bytes_received);
 
-            match elements_array[0].to_ascii_lowercase().as_str() {
+            match elems[0].to_ascii_lowercase().as_str() {
                 "get" => {
-                    let response = commands::handle_get(elements_array, store);
+                    let response = commands::handle_get_old(&elems, store);
                     let _ = stream.write_all(response.as_bytes());
                 }
                 "info" => {
-                    if elements_array[1] == "replication" {
+                    if elems[1] == "replication" {
                         let data = format!(
                             "role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
                             role
@@ -454,74 +448,74 @@ pub fn handle_other_clients_as_slave(
 /// handle connection with master as slave
 pub fn handle_connection_as_slave_with_master(
     mut stream: TcpStream,
-    elements_array: Vec<String>,
+    elems: Vec<String>,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
     role: &str,
     offset: usize,
 ) -> TcpStream {
-    let mut elements_array = elements_array;
+    let mut elems = elems;
 
     println!(
         "[info] elements array received from master as slave: {:?}",
-        elements_array
+        elems
     );
 
-    match elements_array[0].to_ascii_lowercase().as_str() {
+    match elems[0].to_ascii_lowercase().as_str() {
         "set" => {
-            let _ = commands::handle_set(elements_array, store);
+            let _ = commands::handle_set(elems, store);
         }
 
         "get" => {
-            let _ = commands::handle_get(elements_array, store);
+            let _ = commands::handle_get_old(&elems, store);
         }
 
         "rpush" => {
-            let _ = commands::handle_rpush(elements_array, main_list_store);
+            let _ = commands::handle_rpush(elems, main_list_store);
         }
 
         "lpush" => {
-            let _ = commands::handle_lpush(elements_array, main_list_store);
+            let _ = commands::handle_lpush(elems, main_list_store);
         }
 
         "lrange" => {
-            let _ = commands::handle_lrange(elements_array, main_list_store);
+            let _ = commands::handle_lrange(elems, main_list_store);
         }
 
         "llen" => {
-            let _ = commands::handle_llen(elements_array, main_list_store);
+            let _ = commands::handle_llen(elems, main_list_store);
         }
 
         "lpop" => {
-            let _ = commands::handle_lpop(elements_array, main_list_store);
+            let _ = commands::handle_lpop(elems, main_list_store);
         }
 
         "blpop" => {
-            let _ = commands::handle_blpop(elements_array, main_list_store);
+            let _ = commands::handle_blpop(elems, main_list_store);
         }
 
         "type" => {
-            let _ = commands::handle_type(elements_array, store);
+            let _ = commands::handle_type(elems, store);
         }
 
         "xadd" => {
-            let _ = commands::handle_xadd(&mut elements_array, store);
+            let _ = commands::handle_xadd(&mut elems, store);
         }
 
         "xrange" => {
-            let _ = commands::handle_xrange(&mut elements_array, store);
+            let _ = commands::handle_xrange(&mut elems, store);
         }
 
         "xread" => {
-            let _ = commands::handle_xread(&mut elements_array, store);
+            let _ = commands::handle_xread(&mut elems, store);
         }
 
         "incr" => {
-            let _ = commands::handle_incr(&mut elements_array, store);
+            let _ = commands::handle_incr(&mut elems, store);
         }
 
         "info" => {
-            if elements_array[1] == "replication" {
+            if elems[1] == "replication" {
                 let data = format!(
                     "role:{}\r\nmaster_repl_offset:0\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
                     role
@@ -534,7 +528,7 @@ pub fn handle_connection_as_slave_with_master(
         }
 
         "replconf" => {
-            if elements_array[1].to_ascii_lowercase() == "getack" {
+            if elems[1].to_ascii_lowercase() == "getack" {
                 let offset = format!("{}", offset);
                 let data = format!(
                     "*3\r\n$8\r\nreplconf\r\n$3\r\nACK\r\n${}\r\n{}\r\n",
@@ -662,42 +656,42 @@ pub fn handle_exec_under_multi(
 /// execute all the commands queuing after EXE command
 /// returns response of each command
 fn handle_exec_commands<'a>(
-    elements_array: Vec<String>,
+    elems: Vec<String>,
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
 ) -> String {
-    let mut elements_array = elements_array;
+    let mut elems = elems;
 
-    match elements_array[0].to_ascii_lowercase().as_str() {
-        "echo" => commands::handle_echo(elements_array),
+    match elems[0].to_ascii_lowercase().as_str() {
+        "echo" => commands::handle_echo(elems),
 
         "ping" => "+PONG\r\n".to_string(),
 
-        "set" => commands::handle_set(elements_array, store),
+        "set" => commands::handle_set(elems, store),
 
-        "get" => commands::handle_get(elements_array, store),
+        "get" => commands::handle_get_old(&elems, store),
 
-        "rpush" => commands::handle_rpush(elements_array, main_list_store),
+        "rpush" => commands::handle_rpush(elems, main_list_store),
 
-        "lpush" => commands::handle_lpush(elements_array, main_list_store),
+        "lpush" => commands::handle_lpush(elems, main_list_store),
 
-        "lrange" => commands::handle_lrange(elements_array, main_list_store),
+        "lrange" => commands::handle_lrange(elems, main_list_store),
 
-        "llen" => commands::handle_llen(elements_array, main_list_store),
+        "llen" => commands::handle_llen(elems, main_list_store),
 
-        "lpop" => commands::handle_lpop(elements_array, main_list_store),
+        "lpop" => commands::handle_lpop(elems, main_list_store),
 
-        "blpop" => commands::handle_blpop(elements_array, main_list_store),
+        "blpop" => commands::handle_blpop(elems, main_list_store),
 
-        "type" => commands::handle_type(elements_array, store),
+        "type" => commands::handle_type(elems, store),
 
-        "xadd" => commands::handle_xadd(&mut elements_array, store),
+        "xadd" => commands::handle_xadd(&mut elems, store),
 
-        "xrange" => commands::handle_xrange(&mut elements_array, store),
+        "xrange" => commands::handle_xrange(&mut elems, store),
 
-        "xread" => commands::handle_xread(&mut elements_array, store),
+        "xread" => commands::handle_xread(&mut elems, store),
 
-        "incr" => commands::handle_incr(&mut elements_array, store),
+        "incr" => commands::handle_incr(&mut elems, store),
 
         _ => "Not a valid command".to_string(),
     }
@@ -758,11 +752,11 @@ pub fn generate_seq_id(raw_id: &str, last: Option<(u128, u128)>) -> String {
 
 /// validate if entry id is valid
 pub fn validate_entry_id(
-    elements_array: &Vec<String>,
+    elems: &Vec<String>,
     map: &HashMap<String, types::ValueEntry>,
 ) -> Option<&'static str> {
-    let id = elements_array[2].clone();
-    let key = &elements_array[1];
+    let id = elems[2].clone();
+    let key = &elems[1];
     let s = &mut id.splitn(2, "-");
     let (id_ms, id_seq) = (
         s.next().unwrap().parse::<u128>().unwrap(),
@@ -790,23 +784,23 @@ pub fn validate_entry_id(
 
 /// get stream related data
 /// returns (id, map)
-pub fn get_stream_related_data(elements_array: &Vec<String>) -> (String, HashMap<String, String>) {
-    let id = elements_array[2].clone();
+pub fn get_stream_related_data(elems: &Vec<String>) -> (String, HashMap<String, String>) {
+    let id = elems[2].clone();
     let mut map: HashMap<String, String> = HashMap::new();
 
-    let kv_count = (elements_array.len() - 3) / 2;
+    let kv_count = (elems.len() - 3) / 2;
 
     for i in 0..kv_count {
-        map.insert(elements_array[i + 3].clone(), elements_array[i + 4].clone());
+        map.insert(elems[i + 3].clone(), elems[i + 4].clone());
     }
 
     (id, map)
 }
 
 /// get starting and ending indexes from elements array
-pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u128, u128) {
-    let start_id = elements_array[2].clone(); // start_id
-    let end_id = elements_array[3].clone(); // end_id
+pub fn get_start_and_end_indexes(elems: &Vec<String>) -> (u128, u128, u128, u128) {
+    let start_id = elems[2].clone(); // start_id
+    let end_id = elems[3].clone(); // end_id
 
     let start_time;
     let start_seq;
@@ -846,16 +840,16 @@ pub fn get_start_and_end_indexes(elements_array: &Vec<String>) -> (u128, u128, u
 }
 
 // handle expiry
-pub fn handle_expiry(time_setter_args: &str, elements_array: Vec<String>) -> Option<Instant> {
+pub fn handle_expiry(time_setter_args: &str, elems: Vec<String>) -> Option<Instant> {
     match time_setter_args.to_ascii_lowercase().as_str() {
         "px" => {
-            let time = elements_array[4].parse::<u32>().unwrap(); // in milliseconds
+            let time = elems[4].parse::<u32>().unwrap(); // in milliseconds
 
             Some(Instant::now() + std::time::Duration::from_millis(time as u64))
         }
 
         "ex" => {
-            let time = elements_array[4].parse::<u32>().unwrap() * 1000; // in milliseconds
+            let time = elems[4].parse::<u32>().unwrap() * 1000; // in milliseconds
 
             Some(Instant::now() + std::time::Duration::from_millis(time as u64))
         }
@@ -901,7 +895,7 @@ pub fn parsing_elements(
     mut offset: usize,
     no_of_elements: usize,
 ) -> (Vec<String>, usize) {
-    let mut elements_array: Vec<String> = Vec::new();
+    let mut elems: Vec<String> = Vec::new();
 
     for _ in 0..no_of_elements as u32 {
         match bytes_received[offset] {
@@ -911,7 +905,7 @@ pub fn parsing_elements(
 
                 let word = &bytes_received[offset..offset + no_of_elements_in_bulk_str];
 
-                elements_array.push(String::from_utf8_lossy(word).to_string());
+                elems.push(String::from_utf8_lossy(word).to_string());
 
                 offset += (no_of_elements_in_bulk_str as usize) - 1;
 
@@ -923,7 +917,7 @@ pub fn parsing_elements(
         }
     }
 
-    (elements_array, offset)
+    (elems, offset)
 }
 
 pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u128, u128) {
@@ -952,14 +946,11 @@ pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u1
 
 /// mutates the elements array starting indexes
 /// for easier processing of xread command
-pub fn adjust_xread_start_ids(
-    map: &HashMap<String, types::ValueEntry>,
-    elements_array: &mut Vec<String>,
-) {
-    let streams_len = (elements_array.len() - 2) / 2;
+pub fn adjust_xread_start_ids(map: &HashMap<String, types::ValueEntry>, elems: &mut Vec<String>) {
+    let streams_len = (elems.len() - 2) / 2;
 
     for i in 0..streams_len {
-        if let Some(entry) = map.get(&elements_array[i + 2]) {
+        if let Some(entry) = map.get(&elems[i + 2]) {
             if let types::StoredValue::Stream(entry_vec) = &entry.value {
                 let id = entry_vec.last().unwrap().id.clone();
 
@@ -972,7 +963,7 @@ pub fn adjust_xread_start_ids(
                 last_two += 1;
                 let start_new = format!("{}-{}", last_one, last_two);
 
-                elements_array[i + 2 + streams_len] = start_new;
+                elems[i + 2 + streams_len] = start_new;
             }
         }
     }
@@ -980,29 +971,25 @@ pub fn adjust_xread_start_ids(
 
 pub fn get_streams_array(
     map: &HashMap<String, types::ValueEntry>,
-    elements_array: &Vec<String>,
+    elems: &Vec<String>,
 ) -> (String, u32) {
     let mut no_of_valid_streams = 0;
     let mut final_array_data_of_streams = format!("");
 
-    let no_of_streams = (elements_array.len() - 2) / 2;
+    let no_of_streams = (elems.len() - 2) / 2;
 
     for i in 0..no_of_streams {
         // will get these in u128
         let (start_id_time, start_id_sequence, end_id_time, end_id_sequence) =
             // helper::get_start_and_end_indexes_for_xread...
-            get_start_and_end_indexes_for_xread(&elements_array[i + 2 + no_of_streams]);
+            get_start_and_end_indexes_for_xread(&elems[i + 2 + no_of_streams]);
 
-        let mut streams_array = format!(
-            "*2\r\n${}\r\n{}\r\n",
-            &elements_array[i + 2].len(),
-            &elements_array[i + 2]
-        );
+        let mut streams_array = format!("*2\r\n${}\r\n{}\r\n", &elems[i + 2].len(), &elems[i + 2]);
 
         // getting the full entries array
         // stream exists
 
-        if let Some(value_entry) = map.get(&elements_array[i + 2]) {
+        if let Some(value_entry) = map.get(&elems[i + 2]) {
             match &value_entry.value {
                 types::StoredValue::Stream(entry_vector) => {
                     let filtered_data: Vec<&types::Entry> = entry_vector
