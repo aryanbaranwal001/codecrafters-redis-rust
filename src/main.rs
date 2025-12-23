@@ -1019,10 +1019,15 @@ fn handle_connection(
                 }
 
                 "acl" => {
-                    let whoami = &elements_array[1];
+                    let category = &elements_array[1];
 
-                    if whoami.to_ascii_lowercase() == "whoami" {
+                    if category.to_ascii_lowercase() == "whoami" {
                         let _ = stream.write_all("$7\r\ndefault\r\n".as_bytes());
+                    }
+
+                    if category.to_ascii_lowercase() == "getuser" {
+                        let resp = format!("*2\r\n$5\r\nflags\r\n*0\r\n");
+                        let _ = stream.write_all(resp.as_bytes());
                     }
                 }
 
