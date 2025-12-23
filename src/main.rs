@@ -388,26 +388,8 @@ fn handle_connection(
                 }
 
                 "keys" => {
-                    let dir = &*dir_clone.lock().unwrap();
-                    let dbfilename = &*dbfilename_clone.lock().unwrap();
-                    let path =
-                        format!("{}/{}", dir.as_ref().unwrap(), dbfilename.as_ref().unwrap());
-
-                    if elems[1] == "*" {
-                        if let Some(data) = fs::read(path).ok() {
-                            let kv_arr = helper::parse_rdb_get_kv(&data);
-                            let mut k_arr: Vec<String> = Vec::new();
-
-                            for i in kv_arr {
-                                k_arr.push(i[0].clone());
-                            }
-
-                            let resp = helper::elements_arr_to_resp_arr(&k_arr);
-                            let _ = stream.write_all(resp.as_bytes());
-                        } else {
-                            let _ = stream.write_all("*0\r\n\r\n".as_bytes());
-                        }
-                    }
+                    let resp = commands::handle_keys(dir_clone, dbfilename_clone, elems);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "subscribe" => {

@@ -696,3 +696,38 @@ pub fn handle_config(
         "-ERR not a GET command".to_string()
     }
 }
+
+pub fn handle_keys(
+    dir_clone: &Arc<Mutex<Option<String>>>,
+    dbfilename_clone: &Arc<Mutex<Option<String>>>,
+    elems: Vec<String>,
+) -> String {
+    let dir = &*dir_clone.lock().unwrap();
+    let dbfilename = &*dbfilename_clone.lock().unwrap();
+
+    if elems[1] != "*" {
+        return "-ERR Wrong field with KEYS command".to_string();
+    }
+
+    let (Some(dir), Some(dbfilename)) = (dir.as_ref(), dbfilename.as_ref()) else {
+        return "*0\r\n\r\n".to_string();
+    };
+
+    let path = format!("{}/{}", dir, dbfilename);
+
+    let data = match fs::read(path) {
+        Ok(data) => data,
+        Err(_) => {
+            return "*0\r\n\r\n".to_string();
+        }
+    };
+
+    let kv_arr = helper::parse_rdb_get_kv(&data);
+    let mut k_arr: Vec<String> = Vec::new();
+
+    for i in kv_arr {
+        k_arr.push(i[0].clone());
+    }
+
+    return helper::elements_arr_to_resp_arr(&k_arr);
+}
