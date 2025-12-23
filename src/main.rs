@@ -1,5 +1,6 @@
 use clap::Parser;
 use ordered_float::OrderedFloat;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -121,6 +122,9 @@ fn main() {
 
     let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::new(Mutex::new(HashMap::new()));
 
+    let userpw_hmap: Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     println!("[info] {} server with port number: {}", role, port);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
@@ -130,8 +134,9 @@ fn main() {
         let dir_clone = Arc::clone(&dir);
         let zset_hmap = Arc::clone(&zset_hmap);
         let main_list_clone = Arc::clone(&main_list);
-        let subs_htable_clone = Arc::clone(&subs_htable);
         let dbfilename_clone = Arc::clone(&dbfilename);
+        let userpw_hmap_clone = Arc::clone(&userpw_hmap);
+        let subs_htable_clone = Arc::clone(&subs_htable);
         let tcpstream_vector_clone = Arc::clone(&tcpstream_vector);
         let master_repl_offset_clone = Arc::clone(&master_repl_offset);
         let shared_replica_count_clone = Arc::clone(&shared_replicas_count);
@@ -202,6 +207,7 @@ fn main() {
                                 &mut is_subscribed,
                                 &channels_subscribed,
                                 &zset_hmap,
+                                &userpw_hmap_clone,
                             );
                         }
                         Err(e) => {
@@ -234,6 +240,7 @@ fn handle_connection(
     is_subscribed: &mut bool,
     channels_subscribed: &Arc<Mutex<Vec<String>>>,
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    userpw_hmap_clone: &Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>>,
 ) -> TcpStream {
     match bytes_received[0] {
         b'*' => {
@@ -1019,21 +1026,38 @@ fn handle_connection(
                 }
 
                 "acl" => {
-                    let category = &elements_array[1];
-                    let flag = elements_array.get(2);
+                    let category = &elements_array[1].to_ascii_lowercase();
+                    let user = elements_array.get(2);
 
-                    if category.to_ascii_lowercase() == "whoami" {
+                    let mut userpw_hmap = userpw_hmap_clone.lock().unwrap();
+
+                    if category == "whoami" {
                         let _ = stream.write_all("$7\r\ndefault\r\n".as_bytes());
                     }
 
-                    if category.to_ascii_lowercase() == "getuser" {
-                        match flag {
-                            Some(flag) => {
-                                if flag.to_ascii_lowercase() == "default" {
-                                    let resp = format!(
-                                        "*4\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n$9\r\npasswords\r\n*0\r\n"
-                                    );
-                                    let _ = stream.write_all(resp.as_bytes());
+                    if category == "getuser" {
+                        match user {
+                            Some(user) => {
+                                //
+
+                                match userpw_hmap.get(user) {
+                                    Some(hash_vec) => {
+                                        let hash_v: Vec<String> =
+                                            hash_vec.iter().map(|hash| hex::encode(hash)).collect();
+                                        let pw_len = helper::elements_arr_to_resp_arr(&hash_v);
+
+                                        let resp = format!(
+                                            "*4\r\n$5\r\nflags\r\n*0\r\n$9\r\npasswords\r\n{}",
+                                            pw_len
+                                        );
+                                        let _ = stream.write_all(resp.as_bytes());
+                                    }
+                                    None => {
+                                        let resp = format!(
+                                            "*4\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n$9\r\npasswords\r\n*0\r\n"
+                                        );
+                                        let _ = stream.write_all(resp.as_bytes());
+                                    }
                                 }
                             }
                             None => {
@@ -1041,6 +1065,20 @@ fn handle_connection(
                                 let _ = stream.write_all(resp.as_bytes());
                             }
                         }
+                    }
+
+                    if category == "setuser" {
+                        let mut pw_vec: Vec<[u8; 32]> = Vec::new();
+
+                        let username = elements_array[2].clone();
+                        let password = elements_array[3].as_bytes()[1..].to_vec();
+                        let hash = Sha256::digest(password).as_slice().try_into().unwrap();
+
+                        pw_vec.push(hash);
+
+                        userpw_hmap.insert(username, pw_vec);
+
+                        let _ = stream.write_all("+OK\r\n".as_bytes());
                     }
                 }
 
