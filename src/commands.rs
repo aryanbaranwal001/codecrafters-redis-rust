@@ -788,3 +788,44 @@ pub fn handle_publish(
         "-ERR channel doesn't exists".to_string()
     }
 }
+
+pub fn handle_unsubscribe(
+    elems: Vec<String>,
+    subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
+    channels_subscribed: &Arc<Mutex<Vec<String>>>,
+    stream: &mut TcpStream,
+) -> String {
+    let mut map = subs_htable.lock().unwrap();
+    let mut subs_channels = channels_subscribed.lock().unwrap();
+    let chan = &elems[1];
+
+    // remove from channels list
+    let index = subs_channels
+        .iter()
+        .position(|channel| channel == chan)
+        .unwrap();
+    subs_channels.remove(index);
+
+    // remove from subs_htable
+
+    if let Some(subscribers) = map.get_mut(chan) {
+        let index = subscribers
+            .iter()
+            .position(|subs| subs.peer_addr().unwrap() == stream.peer_addr().unwrap())
+            .unwrap();
+        subscribers.remove(index);
+
+        let resp = format!(
+            "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+            "unsubscribe".len(),
+            "unsubscribe",
+            &elems[1].len(),
+            &elems[1],
+            subs_channels.len()
+        );
+
+        resp
+    } else {
+        "-ERR channel doesn't exists".to_string()
+    }
+}

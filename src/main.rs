@@ -409,40 +409,13 @@ fn handle_connection(
                 }
 
                 "unsubscribe" => {
-                    let mut map = subs_htable.lock().unwrap();
-                    let mut subs_channels = channels_subscribed.lock().unwrap();
-
-                    // remove from channels list
-                    let index = subs_channels
-                        .iter()
-                        .position(|channel| *channel == elems[1])
-                        .unwrap();
-                    subs_channels.remove(index);
-
-                    // remove from subs_htable
-                    match map.get_mut(&elems[1]) {
-                        Some(subscribers) => {
-                            let index = subscribers
-                                .iter()
-                                .position(|subs| {
-                                    subs.peer_addr().unwrap() == stream.peer_addr().unwrap()
-                                })
-                                .unwrap();
-                            subscribers.remove(index);
-
-                            let resp = format!(
-                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
-                                "unsubscribe".len(),
-                                "unsubscribe",
-                                &elems[1].len(),
-                                &elems[1],
-                                subs_channels.len()
-                            );
-
-                            let _ = stream.write_all(resp.as_bytes());
-                        }
-                        None => {}
-                    }
+                    let resp = commands::handle_unsubscribe(
+                        elems,
+                        subs_htable,
+                        channels_subscribed,
+                        &mut stream,
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "zadd" => {
