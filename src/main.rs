@@ -926,6 +926,7 @@ fn handle_connection(
 
                     let _ = stream.write_all(coords.as_bytes());
                 }
+
                 "geodist" => {
                     let mut hmap = zset_hmap.lock().unwrap();
 
@@ -965,7 +966,55 @@ fn handle_connection(
                     }
 
                     // I have the coords now
-                    let resp = helper::haversine(coords);
+                    let dist = helper::haversine(coords);
+
+                    let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
+                    let _ = stream.write_all(resp.as_bytes());
+                }
+
+                "geosearch" => {
+                    let mut hmap = zset_hmap.lock().unwrap();
+
+                    let geo_key = &elements_array[1];
+
+                    let lon_given = &elements_array[3].clone();
+                    let lat_given = &elements_array[4].clone();
+
+                    let dist_given = &elements_array[6].parse::<f64>().unwrap();
+
+                    let mut places: Vec<String> = Vec::new();
+
+                    if let Some(zset) = hmap.get_mut(geo_key) {
+                        for (place, zstore) in
+                            zset.scores.iter().map(|(place, zstore)| (place, zstore))
+                        {
+                            match zstore {
+                                types::ZSetStore::Score(geo_code) => {
+                                    println!("[debug] gscore: {}", geo_code);
+
+                                    let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+                                    let lon = format!("{}", lon);
+                                    let lat = format!("{}", lat);
+                                    let dist = helper::haversine([
+                                        [lon, lat],
+                                        [lon_given.clone(), lat_given.clone()],
+                                    ])
+                                    .parse::<f64>()
+                                    .unwrap();
+
+                                    if dist < *dist_given {
+                                        places.push(place.clone());
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        println!("[error] coords do not exists");
+                        return stream;
+                    };
+
+                    let resp = helper::elements_arr_to_resp_arr(&places);
+
                     let _ = stream.write_all(resp.as_bytes());
                 }
 

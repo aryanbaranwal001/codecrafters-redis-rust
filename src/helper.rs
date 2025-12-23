@@ -33,10 +33,7 @@ pub fn haversine(coords: [[String; 2]; 2]) -> String {
 
     let c = 2.0 * a.sqrt().asin();
 
-    let dist = format!("{}", r * c);
-
-    let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
-    resp
+    format!("{}", r * c)
 }
 
 pub fn get_coordinates(geo_code: u64) -> (f64, f64) {
