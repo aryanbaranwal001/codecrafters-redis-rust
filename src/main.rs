@@ -383,28 +383,8 @@ fn handle_connection(
                     let _ = stream.write_all(resp.as_bytes());
                 }
                 "config" => {
-                    if elems[1].to_ascii_lowercase() == "get" {
-                        match elems[2].to_ascii_lowercase().as_str() {
-                            "dir" => {
-                                let dir = &dir_clone.lock().unwrap();
-                                if let Some(dir) = dir.as_ref() {
-                                    let arr = ["dir".to_string(), dir.clone()].to_vec();
-                                    let resp = helper::elements_arr_to_resp_arr(&arr);
-                                    let _ = stream.write_all(resp.as_bytes());
-                                }
-                            }
-                            "dbfilename" => {
-                                let dbfilename = &dbfilename_clone.lock().unwrap();
-                                if let Some(dbfilename) = dbfilename.as_ref() {
-                                    let arr =
-                                        [dbfilename.clone(), "dbfilename".to_string()].to_vec();
-                                    let resp = helper::elements_arr_to_resp_arr(&arr);
-                                    let _ = stream.write_all(resp.as_bytes());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                    let resp = commands::handle_config(dir_clone, dbfilename_clone, elems);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "keys" => {

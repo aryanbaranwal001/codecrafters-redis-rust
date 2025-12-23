@@ -664,3 +664,35 @@ pub fn handle_get(
 
     resp
 }
+
+pub fn handle_config(
+    dir_clone: &Arc<Mutex<Option<String>>>,
+    dbfilename_clone: &Arc<Mutex<Option<String>>>,
+    elems: Vec<String>,
+) -> String {
+    if elems[1].to_ascii_lowercase() == "get" {
+        match elems[2].to_ascii_lowercase().as_str() {
+            "dir" => {
+                let dir = dir_clone.lock().unwrap();
+                if let Some(dir) = dir.as_ref() {
+                    let arr = vec!["dir".to_string(), dir.clone()];
+                    return helper::elements_arr_to_resp_arr(&arr);
+                } else {
+                    "-ERR error getting dir".to_string()
+                }
+            }
+            "dbfilename" => {
+                let dbfilename = &dbfilename_clone.lock().unwrap();
+                if let Some(dbfilename) = dbfilename.as_ref() {
+                    let arr = vec![dbfilename.clone(), "dbfilename".to_string()];
+                    return helper::elements_arr_to_resp_arr(&arr);
+                } else {
+                    "-ERR error getting dbfilename".to_string()
+                }
+            }
+            _ => "-ERR wrong arguement".to_string(),
+        }
+    } else {
+        "-ERR not a GET command".to_string()
+    }
+}
