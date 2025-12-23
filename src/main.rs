@@ -404,21 +404,8 @@ fn handle_connection(
                 }
 
                 "publish" => {
-                    let mut map = subs_htable.lock().unwrap();
-
-                    match map.get_mut(&elems[1]) {
-                        Some(subscribers) => {
-                            let subs_len = subscribers.len();
-                            for subscriber in subscribers {
-                                let arr =
-                                    vec!["message".to_string(), elems[1].clone(), elems[2].clone()];
-                                let resp = helper::elements_arr_to_resp_arr(&arr);
-                                let _ = subscriber.write_all(resp.as_bytes());
-                            }
-                            let _ = stream.write_all(format!(":{}\r\n", subs_len).as_bytes());
-                        }
-                        None => {}
-                    }
+                    let resp = commands::handle_publish(elems, subs_htable);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "unsubscribe" => {

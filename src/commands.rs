@@ -769,3 +769,22 @@ pub fn handle_subscribe(
 
     resp
 }
+
+pub fn handle_publish(
+    elems: Vec<String>,
+    subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
+) -> String {
+    let mut map = subs_htable.lock().unwrap();
+
+    if let Some(subscribers) = map.get_mut(&elems[1]) {
+        let subs_len = subscribers.len();
+        for subscriber in subscribers {
+            let arr = vec!["message".to_string(), elems[1].clone(), elems[2].clone()];
+            let resp = helper::elements_arr_to_resp_arr(&arr);
+            let _ = subscriber.write_all(resp.as_bytes());
+        }
+        format!(":{}\r\n", subs_len)
+    } else {
+        "-ERR channel doesn't exists".to_string()
+    }
+}
