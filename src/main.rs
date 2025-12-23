@@ -393,73 +393,14 @@ fn handle_connection(
                 }
 
                 "subscribe" => {
-                    let mut map = subs_htable.lock().unwrap();
-
-                    // add channel to subscribed channels vec
-                    let mut subs_channels = channels_subscribed.lock().unwrap();
-
-                    match subs_channels.iter().find(|channel| *channel == &elems[1]) {
-                        Some(_) => {
-                            // channel already added to list
-                        }
-                        None => {
-                            // channel not added to list
-                            subs_channels.push(elems[1].clone());
-                        }
-                    }
-
-                    //
-                    match map.get_mut(&elems[1]) {
-                        Some(subscribers) => {
-                            if helper::alread_present(subscribers, &stream) {
-                                let resp = format!(
-                                    "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
-                                    "subscribe".len(),
-                                    "subscribe".to_string(),
-                                    &elems[1].len(),
-                                    &elems[1].clone(),
-                                    subs_channels.len()
-                                );
-
-                                println!("[debug] resp when subscriber exists: {:?}", resp);
-                                let _ = stream.write_all(resp.as_bytes());
-                            } else {
-                                subscribers.push(stream.try_clone().unwrap());
-
-                                let resp = format!(
-                                    "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
-                                    "subscribe".len(),
-                                    "subscribe".to_string(),
-                                    elems[1].len(),
-                                    elems[1].clone(),
-                                    subs_channels.len()
-                                );
-
-                                println!("[debug] resp when subscriber doesn't exists: {:?}", resp);
-                                let _ = stream.write_all(resp.as_bytes());
-                            };
-                        }
-                        None => {
-                            let mut subscribers: Vec<TcpStream> = Vec::new();
-                            subscribers.push(stream.try_clone().unwrap());
-
-                            let resp = format!(
-                                "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
-                                "subscribe".len(),
-                                "subscribe".to_string(),
-                                elems[1].len(),
-                                elems[1].clone(),
-                                subs_channels.len()
-                            );
-
-                            map.insert(elems[1].clone(), subscribers);
-
-                            println!("[debug] resp when channel doesn't exists: {:?}", resp);
-                            let _ = stream.write_all(resp.as_bytes());
-                        }
-                    }
-
-                    *is_subscribed = true;
+                    let resp = commands::handle_subscribe(
+                        elems,
+                        is_subscribed,
+                        channels_subscribed,
+                        subs_htable,
+                        &mut stream,
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "publish" => {

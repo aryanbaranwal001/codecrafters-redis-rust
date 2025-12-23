@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -730,4 +731,41 @@ pub fn handle_keys(
     }
 
     return helper::elements_arr_to_resp_arr(&k_arr);
+}
+
+pub fn handle_subscribe(
+    elems: Vec<String>,
+    is_subscribed: &mut bool,
+    channels_subscribed: &Arc<Mutex<Vec<String>>>,
+    subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
+    stream: &mut TcpStream,
+) -> String {
+    let channel = &elems[1];
+    let mut map = subs_htable.lock().unwrap();
+
+    let mut subs_channels = channels_subscribed.lock().unwrap();
+
+    // add channel if already not present
+    if !subs_channels.iter().any(|c| c == channel) {
+        subs_channels.push(elems[1].clone());
+    }
+
+    let subscribers = map.entry(channel.clone()).or_insert_with(|| Vec::new());
+
+    if !helper::alread_present(subscribers, &stream) {
+        subscribers.push(stream.try_clone().unwrap());
+    }
+
+    let resp = format!(
+        "*3\r\n${}\r\n{}\r\n${}\r\n{}\r\n:{}\r\n",
+        "subscribe".len(),
+        "subscribe".to_string(),
+        channel.len(),
+        channel.clone(),
+        subs_channels.len()
+    );
+
+    *is_subscribed = true;
+
+    resp
 }
