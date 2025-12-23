@@ -25,6 +25,11 @@ impl ZSet {
     }
 }
 
+pub struct UserInfo {
+    pub name: String,
+    pub is_authenticated: bool,
+}
+
 #[derive(Parser, Debug)]
 pub struct Args {
     #[arg(short, long)]
