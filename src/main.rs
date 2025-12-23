@@ -1030,8 +1030,9 @@ fn handle_connection(
                         match flag {
                             Some(flag) => {
                                 if flag.to_ascii_lowercase() == "default" {
-                                    let resp =
-                                        format!("*2\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n");
+                                    let resp = format!(
+                                        "*4\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n$9\r\npasswords\r\n*0\r\n"
+                                    );
                                     let _ = stream.write_all(resp.as_bytes());
                                 }
                             }
