@@ -1082,6 +1082,38 @@ fn handle_connection(
                     }
                 }
 
+                "auth" => {
+                    let user = &elements_array[1];
+                    let password = &elements_array[2].as_bytes();
+
+                    let pw = Sha256::digest(password);
+                    let pw: &[u8] = pw.as_slice().try_into().unwrap();
+                    let pw = hex::encode(pw);
+
+                    let userpw_hmap = userpw_hmap_clone.lock().unwrap();
+
+                    match userpw_hmap.get(user) {
+                        Some(hash_vec) => {
+                            let hash_v: Vec<String> =
+                                hash_vec.iter().map(|hash| hex::encode(hash)).collect();
+
+                            for pwi in hash_v {
+                                if pw == pwi {
+                                    let _ = stream.write_all("+OK\r\n".as_bytes());
+                                    return stream;
+                                }
+                            }
+
+                            let _ = stream.write_all("-WRONGPASS invalid username-password pair or user is disabled.\r\n".as_bytes());
+                            return stream;
+                        }
+                        None => {
+                            let resp = "-ERR username doesn't exists";
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                    }
+                }
+
                 _ => {
                     let _ = stream.write_all("Not a valid command".as_bytes());
                 }
