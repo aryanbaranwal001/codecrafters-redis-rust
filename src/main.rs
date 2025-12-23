@@ -1110,6 +1110,7 @@ fn handle_connection(
                 }
 
                 "auth" => {
+                    let mut userinfo = user_guard.lock().unwrap();
                     let user = &elements_array[1];
                     let password = &elements_array[2].as_bytes();
 
@@ -1127,6 +1128,7 @@ fn handle_connection(
                             for pwi in hash_v {
                                 if pw == pwi {
                                     let _ = stream.write_all("+OK\r\n".as_bytes());
+                                    userinfo.is_authenticated = true;
                                     return stream;
                                 }
                             }
