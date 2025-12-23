@@ -2,18 +2,14 @@ use clap::Parser;
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Condvar, Mutex};
+
 #[derive(Debug)]
 pub struct ZSet {
-    // store actual value
-    pub scores: HashMap<String, ZSetStore>,
+    // stores actual value
+    pub scores: HashMap<String, f64>,
 
     // store for ordering purposes
-    // can't change this because of sorted set
     pub ordered: BTreeSet<(OrderedFloat<f64>, String)>,
-}
-#[derive(Debug)]
-pub enum ZSetStore {
-    Score(f64),
 }
 
 impl ZSet {

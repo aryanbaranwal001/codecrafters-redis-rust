@@ -637,29 +637,22 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         if let Some(old) = zset.scores.get(member) {
-                            match old {
-                                types::ZSetStore::Score(old) => {
-                                    let old_score = OrderedFloat(*old as f64);
-                                    zset.ordered.remove(&(old_score, member.clone()));
-                                    let ordered_score = OrderedFloat(score);
+                            let old_score = OrderedFloat(*old as f64);
+                            zset.ordered.remove(&(old_score, member.clone()));
+                            let ordered_score = OrderedFloat(score);
 
-                                    zset.scores
-                                        .insert(member.clone(), types::ZSetStore::Score(score));
-                                    zset.ordered.insert((ordered_score, member.clone()));
-                                    ":0\r\n"
-                                }
-                            }
+                            zset.scores.insert(member.clone(), score);
+                            zset.ordered.insert((ordered_score, member.clone()));
+                            ":0\r\n"
                         } else {
                             let ordered_score = OrderedFloat(score);
-                            zset.scores
-                                .insert(member.clone(), types::ZSetStore::Score(score));
+                            zset.scores.insert(member.clone(), score);
                             zset.ordered.insert((ordered_score, member.clone()));
                             ":1\r\n"
                         }
                     } else {
                         let mut zset = types::ZSet::new();
-                        zset.scores
-                            .insert(member.clone(), types::ZSetStore::Score(score));
+                        zset.scores.insert(member.clone(), score);
                         let ordered_score = OrderedFloat(score);
                         zset.ordered.insert((ordered_score, member.clone()));
                         hmap.insert(zset_key.to_owned(), zset);
@@ -674,11 +667,9 @@ fn handle_connection(
                     let member = &elements_array[2];
                     let mut hmap = zset_hmap.lock().unwrap();
 
-                    let score = match hmap.get(zset_key) {
+                    let score = *match hmap.get(zset_key) {
                         Some(zset) => match zset.scores.get(member) {
-                            Some(score) => match score {
-                                &types::ZSetStore::Score(score) => score,
-                            },
+                            Some(score) => score,
                             None => {
                                 let _ = stream.write_all("$-1\r\n".as_bytes());
                                 return stream;
@@ -800,12 +791,10 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         match zset.scores.get(member) {
-                            Some(zset_store) => match zset_store {
-                                types::ZSetStore::Score(score) => {
-                                    let score = format!("{}", score);
-                                    format!("${}\r\n{}\r\n", score.len(), score)
-                                }
-                            },
+                            Some(score) => {
+                                let score = format!("{}", score);
+                                format!("${}\r\n{}\r\n", score.len(), score)
+                            }
                             None => "$-1\r\n".to_string(),
                         }
                     } else {
@@ -822,15 +811,13 @@ fn handle_connection(
 
                     let resp = if let Some(zset) = hmap.get_mut(zset_key) {
                         match zset.scores.get(member) {
-                            Some(zset_store) => match zset_store {
-                                types::ZSetStore::Score(score) => {
-                                    zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
+                            Some(score) => {
+                                zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
 
-                                    zset.scores.remove(member);
+                                zset.scores.remove(member);
 
-                                    ":1\r\n".to_string()
-                                }
-                            },
+                                ":1\r\n".to_string()
+                            }
                             None => ":0\r\n".to_string(),
                         }
                     } else {
@@ -864,32 +851,23 @@ fn handle_connection(
                     let gscore = helper::get_score(lon, lat);
 
                     let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                        if let Some(zset_store) = zset.scores.get(place) {
-                            match zset_store {
-                                types::ZSetStore::Score(old_gscore) => {
-                                    zset.ordered
-                                        .remove(&(OrderedFloat(*old_gscore as f64), place.clone()));
-                                    zset.scores.insert(
-                                        place.clone(),
-                                        types::ZSetStore::Score(gscore as f64),
-                                    );
-                                    zset.ordered
-                                        .insert((OrderedFloat(gscore as f64), place.clone()));
+                        if let Some(old_gscore) = zset.scores.get(place) {
+                            zset.ordered
+                                .remove(&(OrderedFloat(*old_gscore as f64), place.clone()));
+                            zset.scores.insert(place.clone(), gscore as f64);
+                            zset.ordered
+                                .insert((OrderedFloat(gscore as f64), place.clone()));
 
-                                    ":0\r\n"
-                                }
-                            }
+                            ":0\r\n"
                         } else {
-                            zset.scores
-                                .insert(place.clone(), types::ZSetStore::Score(gscore as f64));
+                            zset.scores.insert(place.clone(), gscore as f64);
                             zset.ordered
                                 .insert((OrderedFloat(gscore as f64), place.clone()));
                             ":1\r\n"
                         }
                     } else {
                         let mut zset = types::ZSet::new();
-                        zset.scores
-                            .insert(place.clone(), types::ZSetStore::Score(gscore as f64));
+                        zset.scores.insert(place.clone(), gscore as f64);
                         zset.ordered
                             .insert((OrderedFloat(gscore as f64), place.clone()));
                         hmap.insert(geo_key.to_owned(), zset);
@@ -909,26 +887,22 @@ fn handle_connection(
 
                     for place in places {
                         let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                            if let Some(zset_store) = zset.scores.get(place) {
-                                match zset_store {
-                                    types::ZSetStore::Score(geo_code) => {
-                                        println!("[debug] gscore: {}", geo_code);
-                                        // gscore and will later decode this
-                                        let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                                        let lat = format!("{}", lat);
-                                        let lon = format!("{}", lon);
-                                        let resp = format!(
-                                            "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                                            lon.len(),
-                                            lon,
-                                            lat.len(),
-                                            lat,
-                                        );
-                                        println!("[debug] lat: {}", lat);
-                                        println!("[debug] lon: {}", lon);
-                                        resp
-                                    }
-                                }
+                            if let Some(geo_code) = zset.scores.get(place) {
+                                println!("[debug] gscore: {}", geo_code);
+                                // gscore and will later decode this
+                                let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+                                let lat = format!("{}", lat);
+                                let lon = format!("{}", lon);
+                                let resp = format!(
+                                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                                    lon.len(),
+                                    lon,
+                                    lat.len(),
+                                    lat,
+                                );
+                                println!("[debug] lat: {}", lat);
+                                println!("[debug] lon: {}", lon);
+                                resp
                             } else {
                                 "*-1\r\n".to_string()
                             }
@@ -956,17 +930,13 @@ fn handle_connection(
                     let mut c = 0;
                     for place in places {
                         let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                            if let Some(zset_store) = zset.scores.get(place) {
-                                match zset_store {
-                                    types::ZSetStore::Score(geo_code) => {
-                                        println!("[debug] gscore: {}", geo_code);
-                                        // gscore and will later decode this
-                                        let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                                        let lon = format!("{}", lon);
-                                        let lat = format!("{}", lat);
-                                        [lon, lat]
-                                    }
-                                }
+                            if let Some(geo_code) = zset.scores.get(place) {
+                                println!("[debug] gscore: {}", geo_code);
+                                // gscore and will later decode this
+                                let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+                                let lon = format!("{}", lon);
+                                let lat = format!("{}", lat);
+                                [lon, lat]
                             } else {
                                 println!("[error] coords do not exists");
                                 return stream;
@@ -1000,27 +970,23 @@ fn handle_connection(
                     let mut places: Vec<String> = Vec::new();
 
                     if let Some(zset) = hmap.get_mut(geo_key) {
-                        for (place, zstore) in
+                        for (place, geo_code) in
                             zset.scores.iter().map(|(place, zstore)| (place, zstore))
                         {
-                            match zstore {
-                                types::ZSetStore::Score(geo_code) => {
-                                    println!("[debug] gscore: {}", geo_code);
+                            println!("[debug] gscore: {}", geo_code);
 
-                                    let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                                    let lon = format!("{}", lon);
-                                    let lat = format!("{}", lat);
-                                    let dist = helper::haversine([
-                                        [lon, lat],
-                                        [lon_given.clone(), lat_given.clone()],
-                                    ])
-                                    .parse::<f64>()
-                                    .unwrap();
+                            let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+                            let lon = format!("{}", lon);
+                            let lat = format!("{}", lat);
+                            let dist = helper::haversine([
+                                [lon, lat],
+                                [lon_given.clone(), lat_given.clone()],
+                            ])
+                            .parse::<f64>()
+                            .unwrap();
 
-                                    if dist < *dist_given {
-                                        places.push(place.clone());
-                                    }
-                                }
+                            if dist < *dist_given {
+                                places.push(place.clone());
                             }
                         }
                     } else {
