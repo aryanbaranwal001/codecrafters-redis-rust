@@ -1008,3 +1008,32 @@ pub fn handle_zscore(
     };
     resp
 }
+
+pub fn handle_zrem(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let zset_key = &elems[1];
+    let member = &elems[2];
+
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let zset = match hmap.get_mut(zset_key) {
+        Some(z) => z,
+        None => {
+            return ":0\r\n".to_string();
+        }
+    };
+
+    let resp = match zset.scores.get(member) {
+        Some(score) => {
+            zset.ordered.remove(&(OrderedFloat(*score), member.clone()));
+            zset.scores.remove(member);
+
+            ":1\r\n".to_string()
+        }
+        None => ":0\r\n".to_string(),
+    };
+
+    resp
+}
