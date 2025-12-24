@@ -16,7 +16,7 @@ const MAX_LATITUDE: f64 = 85.05112878;
 const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
 const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
-pub fn haversine(coords: [[String; 2]; 2]) -> String {
+pub fn haversine(coords: Vec<[String; 2]>) -> String {
     let lon1 = coords[0][0].parse::<f64>().unwrap();
     let lat1 = coords[0][1].parse::<f64>().unwrap();
     let lon2 = coords[1][0].parse::<f64>().unwrap();

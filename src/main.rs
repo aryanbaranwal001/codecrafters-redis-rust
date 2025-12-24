@@ -458,43 +458,7 @@ fn handle_connection(
                 }
 
                 "geodist" => {
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let geo_key = &elems[1];
-                    let places = &elems[2..4];
-
-                    let mut coords: [[String; 2]; 2] = [
-                        [String::new(), String::new()],
-                        [String::new(), String::new()],
-                    ];
-
-                    let mut c = 0;
-                    for place in places {
-                        let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                            if let Some(geo_code) = zset.scores.get(place) {
-                                println!("[debug] gscore: {}", geo_code);
-                                // gscore and will later decode this
-                                let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                                let lon = format!("{}", lon);
-                                let lat = format!("{}", lat);
-                                [lon, lat]
-                            } else {
-                                println!("[error] coords do not exists");
-                                return stream;
-                            }
-                        } else {
-                            println!("[error] coords do not exists");
-                            return stream;
-                        };
-
-                        coords[c] = resp;
-                        c += 1;
-                    }
-
-                    // I have the coords now
-                    let dist = helper::haversine(coords);
-
-                    let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
+                    let resp = commands::handle_geodist(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
@@ -519,7 +483,7 @@ fn handle_connection(
                             let (lat, lon) = helper::get_coordinates(*geo_code as u64);
                             let lon = format!("{}", lon);
                             let lat = format!("{}", lat);
-                            let dist = helper::haversine([
+                            let dist = helper::haversine(vec![
                                 [lon, lat],
                                 [lon_given.clone(), lat_given.clone()],
                             ])

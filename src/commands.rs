@@ -1111,3 +1111,43 @@ pub fn handle_geopos(
 
     coords
 }
+
+pub fn handle_geodist(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let geo_key = &elems[1];
+    let places = &elems[2..4];
+
+    let zset = match hmap.get_mut(geo_key) {
+        Some(z) => z,
+        None => {
+            return "-ERR coords do not exists".to_string();
+        }
+    };
+
+    let coords: Option<Vec<[String; 2]>> = places
+        .iter()
+        .map(|place| {
+            zset.scores.get(place).map(|geocode| {
+                let (lat, lon) = helper::get_coordinates(*geocode as u64);
+                [lon.to_string(), lat.to_string()]
+            })
+        })
+        .collect();
+
+    let coords_vec = match coords {
+        Some(v) => v,
+        None => {
+            return "-ERR coords do not exists".to_string();
+        }
+    };
+
+    // I have the coords now
+    let dist = helper::haversine(coords_vec);
+
+    let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
+    resp
+}
