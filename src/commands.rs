@@ -862,3 +862,40 @@ pub fn handle_zadd(
 
     resp.to_string()
 }
+
+pub fn handle_zrank(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let zset_key = &elems[1];
+    let member = &elems[2];
+    let hmap = zset_hmap.lock().unwrap();
+
+    let zset = match hmap.get(zset_key) {
+        Some(z) => z,
+        None => {
+            return "$-1\r\n".to_string();
+        }
+    };
+
+    let score = *match zset.scores.get(member) {
+        Some(score) => score,
+        None => {
+            return "$-1\r\n".to_string();
+        }
+    };
+
+    let start = (OrderedFloat(score), "".to_string());
+    let end = (OrderedFloat(score + 1.0), "".to_string());
+
+    let base_rank = zset.ordered.range(..start.clone()).count();
+
+    let resp = zset
+        .ordered
+        .range(start..end)
+        .position(|(_, m)| m == member)
+        .map(|idx| format!(":{}\r\n", base_rank + idx))
+        .unwrap_or_else(|| "$-1\r\n".to_string());
+
+    resp
+}

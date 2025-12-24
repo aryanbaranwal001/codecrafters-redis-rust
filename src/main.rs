@@ -424,48 +424,7 @@ fn handle_connection(
                 }
 
                 "zrank" => {
-                    let zset_key = &elems[1];
-                    let member = &elems[2];
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let score = *match hmap.get(zset_key) {
-                        Some(zset) => match zset.scores.get(member) {
-                            Some(score) => score,
-                            None => {
-                                let _ = stream.write_all("$-1\r\n".as_bytes());
-                                return stream;
-                            }
-                        },
-                        None => {
-                            let _ = stream.write_all("$-1\r\n".as_bytes());
-                            return stream;
-                        }
-                    };
-
-                    let s = OrderedFloat(score);
-                    let e = OrderedFloat(score + 1.0);
-                    let start = (s, "".to_string());
-                    let end = (e, "".to_string());
-
-                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        let rank = zset.ordered.range(..start.clone()).count();
-                        let member_vec: Vec<&String> = zset
-                            .ordered
-                            .range(start..end)
-                            .map(|(_, member)| member)
-                            .collect();
-
-                        match member_vec.iter().position(|m| *m == member) {
-                            Some(index) => {
-                                format!(":{}\r\n", rank + index)
-                            }
-                            None => "$-1\r\n".to_string(),
-                        }
-                    } else {
-                        "$-1\r\n".to_string()
-                    };
-
-                    println!("[debug] resp: {}", resp);
+                    let resp = commands::handle_zrank(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
