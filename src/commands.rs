@@ -1,4 +1,5 @@
 use ordered_float::OrderedFloat;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -1185,6 +1186,66 @@ pub fn handle_geosearch(
     }
 
     let resp = helper::elements_arr_to_resp_arr(&places);
+
+    resp
+}
+
+pub fn handle_acl(
+    elems: Vec<String>,
+    userpw_hmap_clone: &Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>>,
+    user_guard: &Arc<Mutex<types::UserInfo>>,
+) -> String {
+    let flag = elems[1].to_ascii_lowercase();
+
+    let mut userpw_hmap = userpw_hmap_clone.lock().unwrap();
+    let mut userinfo = user_guard.lock().unwrap();
+
+    let user = elems.get(2);
+
+    let resp = match flag.as_str() {
+        "whoami" => match userpw_hmap.get(&userinfo.name) {
+            Some(_) => {
+                if userinfo.is_authenticated {
+                    format!("${}\r\n{}\r\n", userinfo.name.len(), userinfo.name)
+                } else {
+                    "-NOAUTH Authentication required.\r\n".to_string()
+                }
+            }
+            None => "$7\r\ndefault\r\n".to_string(),
+        },
+
+        "getuser" => match user {
+            Some(user) => match userpw_hmap.get(user) {
+                Some(hash_vec) => {
+                    let hash_v: Vec<String> =
+                        hash_vec.iter().map(|hash| hex::encode(hash)).collect();
+                    let pw_len = helper::elements_arr_to_resp_arr(&hash_v);
+
+                    format!("*4\r\n$5\r\nflags\r\n*0\r\n$9\r\npasswords\r\n{}", pw_len)
+                }
+                None => "*4\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n$9\r\npasswords\r\n*0\r\n"
+                    .to_string(),
+            },
+            None => "*2\r\n$5\r\nflags\r\n*0\r\n".to_string(),
+        },
+
+        "setuser" => {
+            let mut pw_vec: Vec<[u8; 32]> = Vec::new();
+
+            let username = elems[2].clone();
+            let password = elems[3].as_bytes()[1..].to_vec();
+            let hash = Sha256::digest(password).as_slice().try_into().unwrap();
+
+            pw_vec.push(hash);
+
+            userpw_hmap.insert(username, pw_vec);
+            userinfo.is_authenticated = true;
+
+            "+OK\r\n".to_string()
+        }
+
+        _ => "-ERR Invalid Flag".to_string(),
+    };
 
     resp
 }

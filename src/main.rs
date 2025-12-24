@@ -468,79 +468,8 @@ fn handle_connection(
                 }
 
                 "acl" => {
-                    let category = &elems[1].to_ascii_lowercase();
-
-                    let mut userpw_hmap = userpw_hmap_clone.lock().unwrap();
-
-                    let mut userinfo = user_guard.lock().unwrap();
-
-                    if category == "whoami" {
-                        match userpw_hmap.get(&userinfo.name) {
-                            Some(_) => {
-                                if userinfo.is_authenticated {
-                                    let resp = format!(
-                                        "${}\r\n{}\r\n",
-                                        userinfo.name.len(),
-                                        userinfo.name
-                                    );
-                                    let _ = stream.write_all(resp.as_bytes());
-                                } else {
-                                    let resp = "-NOAUTH Authentication required.\r\n".to_string();
-                                    let _ = stream.write_all(resp.as_bytes());
-                                }
-                            }
-                            None => {
-                                let _ = stream.write_all("$7\r\ndefault\r\n".as_bytes());
-                            }
-                        }
-                    }
-
-                    let user = elems.get(2);
-
-                    if category == "getuser" {
-                        match user {
-                            Some(user) => match userpw_hmap.get(user) {
-                                Some(hash_vec) => {
-                                    let hash_v: Vec<String> =
-                                        hash_vec.iter().map(|hash| hex::encode(hash)).collect();
-                                    let pw_len = helper::elements_arr_to_resp_arr(&hash_v);
-
-                                    let resp = format!(
-                                        "*4\r\n$5\r\nflags\r\n*0\r\n$9\r\npasswords\r\n{}",
-                                        pw_len
-                                    );
-                                    let _ = stream.write_all(resp.as_bytes());
-                                }
-                                None => {
-                                    let resp = format!(
-                                        "*4\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n$9\r\npasswords\r\n*0\r\n"
-                                    );
-                                    let _ = stream.write_all(resp.as_bytes());
-                                }
-                            },
-                            None => {
-                                let resp = format!("*2\r\n$5\r\nflags\r\n*0\r\n");
-                                let _ = stream.write_all(resp.as_bytes());
-                            }
-                        }
-                    }
-
-                    if category == "setuser" {
-                        let mut pw_vec: Vec<[u8; 32]> = Vec::new();
-
-                        let username = elems[2].clone();
-                        let password = elems[3].as_bytes()[1..].to_vec();
-                        let hash = Sha256::digest(password).as_slice().try_into().unwrap();
-
-                        pw_vec.push(hash);
-
-                        userpw_hmap.insert(username, pw_vec);
-
-                        let _ = stream.write_all("+OK\r\n".as_bytes());
-
-                        // let mut userinfo = user_guard.lock().unwrap();
-                        userinfo.is_authenticated = true;
-                    }
+                    let resp = commands::handle_acl(elems, userpw_hmap_clone, user_guard);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "auth" => {
