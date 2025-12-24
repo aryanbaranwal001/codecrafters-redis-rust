@@ -1151,3 +1151,40 @@ pub fn handle_geodist(
     let resp = format!("${}\r\n{}\r\n", dist.len(), dist);
     resp
 }
+
+pub fn handle_geosearch(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let geo_key = &elems[1];
+    let coord_given = [elems[3].clone(), elems[4].clone()];
+    let dist_given = elems[6].parse::<f64>().unwrap();
+
+    let zset = match hmap.get_mut(geo_key) {
+        Some(z) => z,
+        None => {
+            return "-ERR coords do no exists".to_string();
+        }
+    };
+
+    let mut places: Vec<String> = Vec::new();
+
+    for (place, geo_code) in zset.scores.iter() {
+        let (lat, lon) = helper::get_coordinates(*geo_code as u64);
+        let coord = [lon.to_string(), lat.to_string()];
+
+        let dist = helper::haversine(vec![coord, coord_given.clone()])
+            .parse::<f64>()
+            .unwrap();
+
+        if dist < dist_given {
+            places.push(place.clone());
+        }
+    }
+
+    let resp = helper::elements_arr_to_resp_arr(&places);
+
+    resp
+}

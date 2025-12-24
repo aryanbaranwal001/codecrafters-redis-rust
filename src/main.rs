@@ -463,44 +463,7 @@ fn handle_connection(
                 }
 
                 "geosearch" => {
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let geo_key = &elems[1];
-
-                    let lon_given = &elems[3].clone();
-                    let lat_given = &elems[4].clone();
-
-                    let dist_given = &elems[6].parse::<f64>().unwrap();
-
-                    let mut places: Vec<String> = Vec::new();
-
-                    if let Some(zset) = hmap.get_mut(geo_key) {
-                        for (place, geo_code) in
-                            zset.scores.iter().map(|(place, zstore)| (place, zstore))
-                        {
-                            println!("[debug] gscore: {}", geo_code);
-
-                            let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                            let lon = format!("{}", lon);
-                            let lat = format!("{}", lat);
-                            let dist = helper::haversine(vec![
-                                [lon, lat],
-                                [lon_given.clone(), lat_given.clone()],
-                            ])
-                            .parse::<f64>()
-                            .unwrap();
-
-                            if dist < *dist_given {
-                                places.push(place.clone());
-                            }
-                        }
-                    } else {
-                        println!("[error] coords do not exists");
-                        return stream;
-                    };
-
-                    let resp = helper::elements_arr_to_resp_arr(&places);
-
+                    let resp = commands::handle_geosearch(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
