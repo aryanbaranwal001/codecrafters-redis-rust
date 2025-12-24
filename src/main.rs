@@ -453,42 +453,8 @@ fn handle_connection(
                 }
 
                 "geopos" => {
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let geo_key = &elems[1];
-                    let places = &elems[2..];
-
-                    let mut coords: String = format!("*{}\r\n", places.len());
-
-                    for place in places {
-                        let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                            if let Some(geo_code) = zset.scores.get(place) {
-                                println!("[debug] gscore: {}", geo_code);
-                                // gscore and will later decode this
-                                let (lat, lon) = helper::get_coordinates(*geo_code as u64);
-                                let lat = format!("{}", lat);
-                                let lon = format!("{}", lon);
-                                let resp = format!(
-                                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                                    lon.len(),
-                                    lon,
-                                    lat.len(),
-                                    lat,
-                                );
-                                println!("[debug] lat: {}", lat);
-                                println!("[debug] lon: {}", lon);
-                                resp
-                            } else {
-                                "*-1\r\n".to_string()
-                            }
-                        } else {
-                            "*-1\r\n".to_string()
-                        };
-
-                        coords.push_str(&resp);
-                    }
-
-                    let _ = stream.write_all(coords.as_bytes());
+                    let resp = commands::handle_geopos(zset_hmap, elems);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 "geodist" => {

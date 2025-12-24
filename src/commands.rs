@@ -1075,3 +1075,39 @@ pub fn handle_geoadd(
 
     resp.to_string()
 }
+
+pub fn handle_geopos(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let hmap = zset_hmap.lock().unwrap();
+
+    let geo_key = &elems[1];
+    let places = &elems[2..];
+
+    let mut coords: String = format!("*{}\r\n", places.len());
+
+    for place in places {
+        let resp = hmap
+            .get(geo_key)
+            .and_then(|z| z.scores.get(place))
+            .map(|geocode| {
+                let (lat, lon) = helper::get_coordinates(*geocode as u64);
+                let lat = format!("{}", lat);
+                let lon = format!("{}", lon);
+                let resp = format!(
+                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                    lon.len(),
+                    lon,
+                    lat.len(),
+                    lat,
+                );
+                resp
+            })
+            .unwrap_or_else(|| "*-1\r\n".to_string());
+
+        coords.push_str(&resp);
+    }
+
+    coords
+}
