@@ -429,64 +429,7 @@ fn handle_connection(
                 }
 
                 "zrange" => {
-                    let zset_key = &elems[1];
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let mut start = elems[2].parse::<i32>().unwrap();
-                    let mut end = elems[3].parse::<i32>().unwrap();
-
-                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        let sorted_set_len = zset.ordered.len() as i32;
-
-                        // ensuring start and end are valid
-
-                        if start < 0 {
-                            if start < -1 * sorted_set_len {
-                                start = 0;
-                            } else {
-                                start = sorted_set_len + -1 * ((-1 * start) % sorted_set_len);
-                            }
-                        }
-
-                        if end < 0 {
-                            if end < -1 * sorted_set_len {
-                                end = 0;
-                            } else {
-                                end = sorted_set_len + -1 * ((-1 * end) % sorted_set_len);
-                            }
-                        }
-
-                        if start >= sorted_set_len {
-                            let _ = stream.write_all("*0\r\n".as_bytes());
-                            return stream;
-                        }
-
-                        if end > sorted_set_len {
-                            end = sorted_set_len;
-                        }
-
-                        if start > end {
-                            let _ = stream.write_all("*0\r\n".as_bytes());
-                            return stream;
-                        }
-
-                        let start = start as usize;
-                        let end = end as usize;
-                        let vec: Vec<String> = zset
-                            .ordered
-                            .iter()
-                            .skip(start)
-                            .take(end + 1 - start)
-                            .map(|(_, member)| member.clone())
-                            .collect();
-
-                        let resp = helper::elements_arr_to_resp_arr(&vec);
-                        resp
-                    } else {
-                        let _ = stream.write_all("*0\r\n".as_bytes());
-                        return stream;
-                    };
-
+                    let resp = commands::handle_zrange(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 

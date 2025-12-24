@@ -899,3 +899,66 @@ pub fn handle_zrank(
 
     resp
 }
+
+pub fn handle_zrange(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let zset_key = &elems[1];
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let mut start = elems[2].parse::<i32>().unwrap();
+    let mut end = elems[3].parse::<i32>().unwrap();
+
+    let zset = match hmap.get_mut(zset_key) {
+        Some(z) => z,
+        None => {
+            return "*0\r\n".to_string();
+        }
+    };
+
+    let sorted_set_len = zset.ordered.len() as i32;
+
+    // ensuring start and end are valid
+
+    if start < 0 {
+        if start < -1 * sorted_set_len {
+            start = 0;
+        } else {
+            start = sorted_set_len + -1 * ((-1 * start) % sorted_set_len);
+        }
+    }
+
+    if end < 0 {
+        if end < -1 * sorted_set_len {
+            end = 0;
+        } else {
+            end = sorted_set_len + -1 * ((-1 * end) % sorted_set_len);
+        }
+    }
+
+    if start >= sorted_set_len {
+        return "*0\r\n".to_string();
+    }
+
+    if end > sorted_set_len {
+        end = sorted_set_len;
+    }
+
+    if start > end {
+        return "*0\r\n".to_string();
+    }
+
+    let start = start as usize;
+    let end = end as usize;
+    let vec: Vec<String> = zset
+        .ordered
+        .iter()
+        .skip(start)
+        .take(end + 1 - start)
+        .map(|(_, member)| member.clone())
+        .collect();
+
+    let resp = helper::elements_arr_to_resp_arr(&vec);
+    resp
+}
