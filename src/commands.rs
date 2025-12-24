@@ -962,3 +962,23 @@ pub fn handle_zrange(
     let resp = helper::elements_arr_to_resp_arr(&vec);
     resp
 }
+
+pub fn handle_zcard(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let zset_key = &elems[1];
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let zset = match hmap.get_mut(zset_key) {
+        Some(z) => z,
+        None => {
+            return ":0\r\n".to_string();
+        }
+    };
+
+    let sorted_set_len = zset.ordered.len();
+    let resp = format!(":{}\r\n", sorted_set_len);
+
+    resp
+}

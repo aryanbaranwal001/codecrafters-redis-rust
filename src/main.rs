@@ -434,15 +434,7 @@ fn handle_connection(
                 }
 
                 "zcard" => {
-                    let zset_key = &elems[1];
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        let sorted_set_len = zset.ordered.len();
-                        format!(":{}\r\n", sorted_set_len)
-                    } else {
-                        ":0\r\n".to_string()
-                    };
+                    let resp = commands::handle_zcard(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
