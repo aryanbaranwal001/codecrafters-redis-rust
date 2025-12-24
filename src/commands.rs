@@ -1037,3 +1037,41 @@ pub fn handle_zrem(
 
     resp
 }
+
+pub fn handle_geoadd(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let geo_key = &elems[1];
+    let lon = elems[2].parse::<f64>().unwrap();
+    let lat = elems[3].parse::<f64>().unwrap();
+    let place = &elems[4];
+
+    if !(-180.0..=180.0).contains(&lon) || !(-85.05112878..=85.05112878).contains(&lat) {
+        return format!("-ERR invalid longitude,latitude pair {},{}\r\n", lon, lat);
+    }
+
+    let gscore = helper::get_score(lon, lat) as f64;
+
+    let zset = hmap
+        .entry(geo_key.clone())
+        .or_insert_with(|| types::ZSet::new());
+
+    let is_exist = match zset.scores.get(place) {
+        Some(old_gscore) => {
+            zset.ordered
+                .remove(&(OrderedFloat(*old_gscore as f64), place.clone()));
+
+            true
+        }
+        None => false,
+    };
+    zset.scores.insert(place.clone(), gscore);
+    zset.ordered.insert((OrderedFloat(gscore), place.clone()));
+
+    let resp = if is_exist { ":0\r\n" } else { ":1\r\n" };
+
+    resp.to_string()
+}

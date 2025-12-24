@@ -1,5 +1,4 @@
 use clap::Parser;
-use ordered_float::OrderedFloat;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -449,53 +448,7 @@ fn handle_connection(
                 }
 
                 "geoadd" => {
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let geo_key = &elems[1];
-                    let lon = elems[2].parse::<f64>().unwrap();
-                    let lat = elems[3].parse::<f64>().unwrap();
-                    let place = &elems[4];
-
-                    if !(lon <= 180.0 && lon >= -180.0) {
-                        let error =
-                            format!("-ERR invalid longitude,latitude pair {},{}\r\n", lon, lat);
-                        let _ = stream.write_all(error.as_bytes());
-                        return stream;
-                    }
-
-                    if !(lat <= 85.05112878 && lat >= -85.05112878) {
-                        let error =
-                            format!("-ERR invalid longitude,latitude pair {},{}\r\n", lon, lat);
-                        let _ = stream.write_all(error.as_bytes());
-                        return stream;
-                    }
-
-                    let gscore = helper::get_score(lon, lat);
-
-                    let resp = if let Some(zset) = hmap.get_mut(geo_key) {
-                        if let Some(old_gscore) = zset.scores.get(place) {
-                            zset.ordered
-                                .remove(&(OrderedFloat(*old_gscore as f64), place.clone()));
-                            zset.scores.insert(place.clone(), gscore as f64);
-                            zset.ordered
-                                .insert((OrderedFloat(gscore as f64), place.clone()));
-
-                            ":0\r\n"
-                        } else {
-                            zset.scores.insert(place.clone(), gscore as f64);
-                            zset.ordered
-                                .insert((OrderedFloat(gscore as f64), place.clone()));
-                            ":1\r\n"
-                        }
-                    } else {
-                        let mut zset = types::ZSet::new();
-                        zset.scores.insert(place.clone(), gscore as f64);
-                        zset.ordered
-                            .insert((OrderedFloat(gscore as f64), place.clone()));
-                        hmap.insert(geo_key.to_owned(), zset);
-                        ":1\r\n"
-                    };
-
+                    let resp = commands::handle_geoadd(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
