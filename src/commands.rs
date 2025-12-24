@@ -982,3 +982,29 @@ pub fn handle_zcard(
 
     resp
 }
+
+pub fn handle_zscore(
+    zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
+    elems: Vec<String>,
+) -> String {
+    let zset_key = &elems[1];
+    let member = &elems[2];
+
+    let mut hmap = zset_hmap.lock().unwrap();
+
+    let zset = match hmap.get_mut(zset_key) {
+        Some(z) => z,
+        None => {
+            return "$-1\r\n".to_string();
+        }
+    };
+
+    let resp = match zset.scores.get(member) {
+        Some(s) => {
+            let score = s.to_string();
+            format!("${}\r\n{}\r\n", score.len(), score)
+        }
+        None => "$-1\r\n".to_string(),
+    };
+    resp
+}

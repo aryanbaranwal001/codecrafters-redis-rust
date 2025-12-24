@@ -439,22 +439,7 @@ fn handle_connection(
                 }
 
                 "zscore" => {
-                    let zset_key = &elems[1];
-                    let member = &elems[2];
-
-                    let mut hmap = zset_hmap.lock().unwrap();
-
-                    let resp = if let Some(zset) = hmap.get_mut(zset_key) {
-                        match zset.scores.get(member) {
-                            Some(score) => {
-                                let score = format!("{}", score);
-                                format!("${}\r\n{}\r\n", score.len(), score)
-                            }
-                            None => "$-1\r\n".to_string(),
-                        }
-                    } else {
-                        "$-1\r\n".to_string()
-                    };
+                    let resp = commands::handle_zscore(zset_hmap, elems);
                     let _ = stream.write_all(resp.as_bytes());
                 }
 
