@@ -1249,3 +1249,33 @@ pub fn handle_acl(
 
     resp
 }
+
+pub fn handle_auth(
+    elems: Vec<String>,
+    userpw_hmap_clone: &Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>>,
+    user_guard: &Arc<Mutex<types::UserInfo>>,
+) -> String {
+    let mut userinfo = user_guard.lock().unwrap();
+    let userpw_hmap = userpw_hmap_clone.lock().unwrap();
+
+    let password = elems[2].as_bytes();
+    let user = &elems[1];
+
+    let pw = hex::encode(Sha256::digest(password));
+
+    let hash_vec = match userpw_hmap.get(user) {
+        Some(v) => v,
+        None => return "-ERR username doesn't exists".to_string(),
+    };
+
+    let hash_v: Vec<String> = hash_vec.iter().map(|hash| hex::encode(hash)).collect();
+
+    for pwi in hash_v {
+        if pw == pwi {
+            userinfo.is_authenticated = true;
+            return "+OK\r\n".to_string();
+        }
+    }
+
+    return "-WRONGPASS invalid username-password pair or user is disabled.\r\n".to_string();
+}

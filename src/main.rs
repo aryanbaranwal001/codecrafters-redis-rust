@@ -1,5 +1,4 @@
 use clap::Parser;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -473,37 +472,8 @@ fn handle_connection(
                 }
 
                 "auth" => {
-                    let mut userinfo = user_guard.lock().unwrap();
-                    let user = &elems[1];
-                    let password = &elems[2].as_bytes();
-
-                    let pw = Sha256::digest(password);
-                    let pw: &[u8] = pw.as_slice().try_into().unwrap();
-                    let pw = hex::encode(pw);
-
-                    let userpw_hmap = userpw_hmap_clone.lock().unwrap();
-
-                    match userpw_hmap.get(user) {
-                        Some(hash_vec) => {
-                            let hash_v: Vec<String> =
-                                hash_vec.iter().map(|hash| hex::encode(hash)).collect();
-
-                            for pwi in hash_v {
-                                if pw == pwi {
-                                    let _ = stream.write_all("+OK\r\n".as_bytes());
-                                    userinfo.is_authenticated = true;
-                                    return stream;
-                                }
-                            }
-
-                            let _ = stream.write_all("-WRONGPASS invalid username-password pair or user is disabled.\r\n".as_bytes());
-                            return stream;
-                        }
-                        None => {
-                            let resp = "-ERR username doesn't exists";
-                            let _ = stream.write_all(resp.as_bytes());
-                        }
-                    }
+                    let resp = commands::handle_auth(elems, userpw_hmap_clone, user_guard);
+                    let _ = stream.write_all(resp.as_bytes());
                 }
 
                 _ => {
