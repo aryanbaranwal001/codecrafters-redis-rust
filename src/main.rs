@@ -251,109 +251,62 @@ fn handle_connection(
             let mut elems = helper::get_elems(bytes_received);
             println!("[info] elements array: {:?}", elems);
 
-            match elems[0].to_ascii_lowercase().as_str() {
-                "echo" => {
-                    let response = commands::handle_echo(elems);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+            let resp: String = match elems[0].to_ascii_lowercase().as_str() {
+                "echo" => commands::handle_echo(elems),
 
-                "ping" => {
-                    let _ = stream.write_all("+PONG\r\n".as_bytes());
-                }
+                "ping" => "+PONG\r\n".to_string(),
 
-                "set" => {
-                    let response = commands::handle_set(elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "set" => commands::handle_set(elems, store),
 
-                "get" => {
-                    let response = commands::handle_get(dir_clone, dbfilename_clone, &elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "get" => commands::handle_get(dir_clone, dbfilename_clone, &elems, store),
 
-                "rpush" => {
-                    let response = commands::handle_rpush(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "rpush" => commands::handle_rpush(elems, main_list_store),
 
-                "lpush" => {
-                    let response = commands::handle_lpush(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "lpush" => commands::handle_lpush(elems, main_list_store),
 
-                "lrange" => {
-                    let response = commands::handle_lrange(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "lrange" => commands::handle_lrange(elems, main_list_store),
 
-                "llen" => {
-                    let response = commands::handle_llen(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "llen" => commands::handle_llen(elems, main_list_store),
 
-                "lpop" => {
-                    let response = commands::handle_lpop(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "lpop" => commands::handle_lpop(elems, main_list_store),
 
-                "blpop" => {
-                    let response = commands::handle_blpop(elems, main_list_store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "blpop" => commands::handle_blpop(elems, main_list_store),
 
-                "type" => {
-                    let response = commands::handle_type(elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "type" => commands::handle_type(elems, store),
 
-                "xadd" => {
-                    let response = commands::handle_xadd(&mut elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "xadd" => commands::handle_xadd(&mut elems, store),
 
-                "xrange" => {
-                    let response = commands::handle_xrange(&mut elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "xrange" => commands::handle_xrange(&mut elems, store),
 
-                "xread" => {
-                    let response = commands::handle_xread(&mut elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "xread" => commands::handle_xread(&mut elems, store),
 
-                "incr" => {
-                    let response = commands::handle_incr(&mut elems, store);
-                    let _ = stream.write_all(response.as_bytes());
-                }
+                "incr" => commands::handle_incr(&mut elems, store),
 
                 "multi" => {
                     commands::handle_multi(&mut stream, store, main_list_store);
+                    "".to_string()
                 }
 
                 // discard without multi
-                "discard" => {
-                    let _ = stream.write_all(b"-ERR DISCARD without MULTI\r\n");
-                }
+                "discard" => "-ERR DISCARD without MULTI\r\n".to_string(),
 
                 // exec without multi
-                "exec" => {
-                    let _ = stream.write_all(b"-ERR EXEC without MULTI\r\n");
-                }
+                "exec" => "-ERR EXEC without MULTI\r\n".to_string(),
 
-                "info" => {
-                    if let Some(resp) = commands::handle_info(&elems, role) {
-                        let _ = stream.write_all(resp.as_bytes());
-                    };
-                }
+                "info" => match commands::handle_info(&elems, role) {
+                    Some(resp) => resp,
+                    None => "".to_string(),
+                },
 
                 "replconf" => {
-                    if let Some(resp) = commands::handle_replconf(
+                    match commands::handle_replconf(
                         &elems,
                         master_repl_offset,
                         shared_replica_count_clone,
                     ) {
-                        let _ = stream.write_all(resp.as_bytes());
-                    };
+                        Some(resp) => resp,
+                        None => "".to_string(),
+                    }
                 }
 
                 "psync" => {
@@ -369,117 +322,63 @@ fn handle_connection(
                     // assuming slave doesn't send psync again
                     let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
                     tcp_vecc.push(stream.try_clone().unwrap());
+                    "".to_string()
                 }
 
-                "wait" => {
-                    let resp = commands::handle_wait(
-                        &elems,
-                        tcpstream_vector_clone,
-                        master_repl_offset,
-                        shared_replica_count_clone,
-                    );
-                    let _ = stream.write_all(resp.as_bytes());
-                }
-                "config" => {
-                    let resp = commands::handle_config(dir_clone, dbfilename_clone, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "wait" => commands::handle_wait(
+                    &elems,
+                    tcpstream_vector_clone,
+                    master_repl_offset,
+                    shared_replica_count_clone,
+                ),
+                "config" => commands::handle_config(dir_clone, dbfilename_clone, elems),
 
-                "keys" => {
-                    let resp = commands::handle_keys(dir_clone, dbfilename_clone, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "keys" => commands::handle_keys(dir_clone, dbfilename_clone, elems),
 
-                "subscribe" => {
-                    let resp = commands::handle_subscribe(
-                        elems,
-                        is_subscribed,
-                        channels_subscribed,
-                        subs_htable,
-                        &mut stream,
-                    );
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "subscribe" => commands::handle_subscribe(
+                    elems,
+                    is_subscribed,
+                    channels_subscribed,
+                    subs_htable,
+                    &mut stream,
+                ),
 
-                "publish" => {
-                    let resp = commands::handle_publish(elems, subs_htable);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "publish" => commands::handle_publish(elems, subs_htable),
 
-                "unsubscribe" => {
-                    let resp = commands::handle_unsubscribe(
-                        elems,
-                        subs_htable,
-                        channels_subscribed,
-                        &mut stream,
-                    );
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "unsubscribe" => commands::handle_unsubscribe(
+                    elems,
+                    subs_htable,
+                    channels_subscribed,
+                    &mut stream,
+                ),
 
-                "zadd" => {
-                    let resp = commands::handle_zadd(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zadd" => commands::handle_zadd(zset_hmap, elems),
 
-                "zrank" => {
-                    let resp = commands::handle_zrank(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zrank" => commands::handle_zrank(zset_hmap, elems),
 
-                "zrange" => {
-                    let resp = commands::handle_zrange(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zrange" => commands::handle_zrange(zset_hmap, elems),
 
-                "zcard" => {
-                    let resp = commands::handle_zcard(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zcard" => commands::handle_zcard(zset_hmap, elems),
 
-                "zscore" => {
-                    let resp = commands::handle_zscore(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zscore" => commands::handle_zscore(zset_hmap, elems),
 
-                "zrem" => {
-                    let resp = commands::handle_zrem(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "zrem" => commands::handle_zrem(zset_hmap, elems),
 
-                "geoadd" => {
-                    let resp = commands::handle_geoadd(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "geoadd" => commands::handle_geoadd(zset_hmap, elems),
 
-                "geopos" => {
-                    let resp = commands::handle_geopos(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "geopos" => commands::handle_geopos(zset_hmap, elems),
 
-                "geodist" => {
-                    let resp = commands::handle_geodist(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "geodist" => commands::handle_geodist(zset_hmap, elems),
 
-                "geosearch" => {
-                    let resp = commands::handle_geosearch(zset_hmap, elems);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "geosearch" => commands::handle_geosearch(zset_hmap, elems),
 
-                "acl" => {
-                    let resp = commands::handle_acl(elems, userpw_hmap_clone, user_guard);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "acl" => commands::handle_acl(elems, userpw_hmap_clone, user_guard),
 
-                "auth" => {
-                    let resp = commands::handle_auth(elems, userpw_hmap_clone, user_guard);
-                    let _ = stream.write_all(resp.as_bytes());
-                }
+                "auth" => commands::handle_auth(elems, userpw_hmap_clone, user_guard),
 
-                _ => {
-                    let _ = stream.write_all("Not a valid command".as_bytes());
-                }
-            }
+                _ => "-ERR Not a valid command".to_string(),
+            };
+            let _ = stream.write_all(resp.as_bytes());
         }
 
         _ => {
