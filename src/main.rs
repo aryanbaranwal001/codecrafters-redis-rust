@@ -298,18 +298,7 @@ fn handle_connection(
                 }
 
                 "psync" => {
-                    let _ = stream
-                        .write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
-
-                    let rdb_file_bytes = fs::read("rdbfile.rdb").unwrap();
-                    let header = format!("${}\r\n", rdb_file_bytes.len());
-
-                    let _ = stream.write_all(header.as_bytes());
-                    let _ = stream.write_all(&rdb_file_bytes);
-
-                    // assuming slave doesn't send psync again
-                    let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
-                    tcp_vecc.push(stream.try_clone().unwrap());
+                    commands::handle_psync(&mut stream, tcpstream_vector_clone);
                     "".to_string()
                 }
 
@@ -364,13 +353,13 @@ fn handle_connection(
 
                 "auth" => commands::handle_auth(elems, userpw_hmap_clone, user_guard),
 
-                _ => "-ERR Not a valid command".to_string(),
+                _ => "-ERR Not a valid command\r\n".to_string(),
             };
             let _ = stream.write_all(resp.as_bytes());
         }
 
         _ => {
-            let _ = stream.write_all(b"invalid resp string");
+            eprint!("[error] invalid resp string");
         }
     }
 

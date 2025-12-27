@@ -1279,3 +1279,17 @@ pub fn handle_auth(
 
     return "-WRONGPASS invalid username-password pair or user is disabled.\r\n".to_string();
 }
+
+pub fn handle_psync(stream: &mut TcpStream, tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>) {
+    let _ = stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
+
+    let rdb_file_bytes = fs::read("rdbfile.rdb").unwrap();
+    let header = format!("${}\r\n", rdb_file_bytes.len());
+
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(&rdb_file_bytes);
+
+    // assuming slave doesn't send psync again
+    let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
+    tcp_vecc.push(stream.try_clone().unwrap());
+}
