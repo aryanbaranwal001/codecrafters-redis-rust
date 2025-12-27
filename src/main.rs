@@ -24,24 +24,25 @@ fn main() {
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
+    // if role == slave, handling connection with master
     let role = if let Some(replicaof_string) = args.replicaof {
         let (master_url, marter_port) = replicaof_string
             .split_once(" ")
-            .expect("[error] [slave] invalid format (expected: HOST PORT)");
+            .expect("[error] invalid format (expected: HOST PORT)");
 
         let master_addr = format!("{master_url}:{marter_port}");
         let mut master_stream = TcpStream::connect(&master_addr).unwrap();
-        println!("[info] [slave] connected with master with addr: {master_addr}");
+        println!("[info] connected with master with addr: {master_addr}");
 
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);
         let mut offset: usize = 0;
 
-        if let Some(left_commands) = helper::hand_shake(&port, &mut master_stream) {
-            // run the left commands
+        // run the left commands
+        if let Some(left_cmds) = helper::hand_shake(&port, &mut master_stream) {
             let mut counter = 0;
-            while counter < left_commands.len() {
-                let (elems, count) = helper::get_elems_with_counter(counter, &left_commands);
+            while counter < left_cmds.len() {
+                let (elems, count) = helper::get_elems_with_counter(counter, &left_cmds);
 
                 master_stream = helper::handle_connection_as_slave_with_master(
                     master_stream,
@@ -57,13 +58,14 @@ fn main() {
             }
         }
 
+        // handling connection as slave with master
         thread::spawn(move || {
             let mut buffer = [0; 512];
 
             loop {
                 match master_stream.read(&mut buffer) {
                     Ok(0) => {
-                        println!("[info] [SLAVE] disconnected from master");
+                        println!("[info] disconnected from master");
                         return;
                     }
                     Ok(n) => {
@@ -88,12 +90,14 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        println!("[ERROR] [SLAVE] error reading stream: {e}");
+                        eprintln!("[error] error reading stream: {e}");
                     }
                 }
             }
         });
         "role:slave"
+
+    // if role != slave
     } else {
         "role:master"
     };
@@ -105,9 +109,7 @@ fn main() {
     let tcpstream_vector: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     let subs_htable: Arc<Mutex<HashMap<String, Vec<TcpStream>>>> =
         Arc::new(Mutex::new(HashMap::new()));
-
     let zset_hmap: Arc<Mutex<HashMap<String, types::ZSet>>> = Arc::new(Mutex::new(HashMap::new()));
-
     let userpw_hmap: Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
@@ -202,13 +204,13 @@ fn main() {
                             );
                         }
                         Err(e) => {
-                            println!("[ERROR] error reading stream: {e}");
+                            println!("[error] error reading stream: {e}");
                         }
                     }
                 }
             }
             Err(e) => {
-                println!("[ERROR] error making connection: {e}");
+                println!("[error] error making connection: {e}");
             }
         });
     }

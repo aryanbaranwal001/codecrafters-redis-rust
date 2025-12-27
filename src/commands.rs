@@ -12,12 +12,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::helper;
 use crate::types::{self};
 
+// handle echo cmd
 pub fn handle_echo(elems: Vec<String>) -> String {
     let value = &elems[1];
 
     return format!("${}\r\n{}\r\n", value.len(), value);
 }
 
+// handle set cmd
 pub fn handle_set(elems: Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
@@ -39,6 +41,7 @@ pub fn handle_set(elems: Vec<String>, store: &types::SharedStore) -> String {
     return "+OK\r\n".to_string();
 }
 
+// handle get cmd but without rdb file
 pub fn handle_get_old(elems: &Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
@@ -65,8 +68,67 @@ pub fn handle_get_old(elems: &Vec<String>, store: &types::SharedStore) -> String
     }
 }
 
+// handle get cmd with/without rdb file
+pub fn handle_get(
+    dir_clone: &Arc<Mutex<Option<String>>>,
+    dbfilename_clone: &Arc<Mutex<Option<String>>>,
+    elems: &Vec<String>,
+    store: &types::SharedStore,
+) -> String {
+    let dir = &*dir_clone.lock().unwrap();
+    let dbfilename = &*dbfilename_clone.lock().unwrap();
+    let key = elems[1].clone();
+
+    // early return if dir & dbfielname doesn't exists
+    let (Some(dir), Some(dbfilename)) = (dir, dbfilename) else {
+        return handle_get_old(elems, store);
+    };
+
+    let path = format!("{}/{}", dir, dbfilename);
+    let data = fs::read(path).unwrap();
+
+    let (kv, kv_fc, kv_fd) = helper::parse_db(&data);
+
+    // kv pair
+    let resp = if let Some(kv_pair) = kv.iter().find(|p| p[0] == key) {
+        let key = &kv_pair[1];
+        let resp = format!("${}\r\n{}\r\n", key.len(), key);
+        resp
+        // kv pair with milliseconds timeout
+    } else if let Some(kv_pair_fc) = kv_fc.iter().find(|p| p[0] == key) {
+        let expiry = kv_pair_fc[2].parse::<u64>().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+
+        if now as u64 > expiry {
+            "$-1\r\n".to_string()
+        } else {
+            format!("${}\r\n{}\r\n", kv_pair_fc[1].len(), kv_pair_fc[1])
+        }
+    // kv pair with seconds timeout
+    } else if let Some(kv_pair_fd) = kv_fd.iter().find(|p| p[0] == key) {
+        let expiry = kv_pair_fd[2].parse::<u32>().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        if now as u32 > expiry {
+            "$-1\r\n".to_string()
+        } else {
+            format!("${}\r\n{}\r\n", kv_pair_fd[1].len(), kv_pair_fd[1])
+        }
+    } else {
+        "-ERR key doesn't exists in RDB file".to_string()
+    };
+
+    resp
+}
+
+// handle rpush
 pub fn handle_rpush(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
-    // let (main_list_guard, cvar) = &**main_list_store;
     let (main_list_guard, cvar) = &**main_list_store;
 
     let mut main_list = main_list_guard.lock().unwrap();
@@ -90,6 +152,7 @@ pub fn handle_rpush(elems: Vec<String>, main_list_store: &types::SharedMainList)
     return format!(":{}\r\n", list.vec.len());
 }
 
+// handle lpush
 pub fn handle_lpush(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
     let (main_list_guard, _) = &**main_list_store;
 
@@ -113,6 +176,7 @@ pub fn handle_lpush(elems: Vec<String>, main_list_store: &types::SharedMainList)
     return format!(":{}\r\n", list.vec.len());
 }
 
+// handle lrange
 pub fn handle_lrange(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
     let (guard, _) = &**main_list_store;
     let main_list = guard.lock().unwrap();
@@ -165,6 +229,7 @@ pub fn handle_lrange(elems: Vec<String>, main_list_store: &types::SharedMainList
     }
 }
 
+// handle llen
 pub fn handle_llen(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
     let (guard, _) = &**main_list_store;
     let mut main_list = guard.lock().unwrap();
@@ -179,6 +244,7 @@ pub fn handle_llen(elems: Vec<String>, main_list_store: &types::SharedMainList) 
     return format!(":{}\r\n", list.vec.len());
 }
 
+// handle lpop
 pub fn handle_lpop(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
     let (main_list_guard, _) = &**main_list_store;
     let mut main_list = main_list_guard.lock().unwrap();
@@ -214,6 +280,7 @@ pub fn handle_lpop(elems: Vec<String>, main_list_store: &types::SharedMainList) 
     resp
 }
 
+// handle blpop
 pub fn handle_blpop(elems: Vec<String>, main_list_store: &types::SharedMainList) -> String {
     let (guard, cvar) = &**main_list_store;
     let mut main_list = guard.lock().unwrap();
@@ -253,6 +320,7 @@ pub fn handle_blpop(elems: Vec<String>, main_list_store: &types::SharedMainList)
     resp
 }
 
+// handle type
 pub fn handle_type(elems: Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let map = s.lock().unwrap();
@@ -267,6 +335,7 @@ pub fn handle_type(elems: Vec<String>, store: &types::SharedStore) -> String {
     }
 }
 
+// handle xadd
 pub fn handle_xadd(elems: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (guard, cvar) = &**store;
     let mut map = guard.lock().unwrap();
@@ -326,6 +395,7 @@ pub fn handle_xadd(elems: &mut Vec<String>, store: &types::SharedStore) -> Strin
     return resp;
 }
 
+// handle xrange
 pub fn handle_xrange(elems: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (guard, _) = &**store;
     let map = guard.lock().unwrap();
@@ -387,6 +457,7 @@ pub fn handle_xrange(elems: &mut Vec<String>, store: &types::SharedStore) -> Str
     }
 }
 
+// handle xread
 pub fn handle_xread(elems: &mut Vec<String>, store: &types::SharedStore) -> String {
     // $ will pass nonetheless, anything will pass in place of entry ids
     // blocking will always happen irrespective of whatever data is already present or not
@@ -427,6 +498,7 @@ pub fn handle_xread(elems: &mut Vec<String>, store: &types::SharedStore) -> Stri
     }
 }
 
+// handle incr cmd
 pub fn handle_incr(elems: &mut Vec<String>, store: &types::SharedStore) -> String {
     let (s, _) = &**store;
     let mut map = s.lock().unwrap();
@@ -462,6 +534,7 @@ pub fn handle_incr(elems: &mut Vec<String>, store: &types::SharedStore) -> Strin
     }
 }
 
+// handle multi cmd
 pub fn handle_multi(
     stream: &mut TcpStream,
     store: &types::SharedStore,
@@ -540,6 +613,22 @@ pub fn handle_replconf(
     }
 }
 
+// handle psync cmd
+pub fn handle_psync(stream: &mut TcpStream, tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>) {
+    let _ = stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
+
+    let rdb_file_bytes = fs::read("rdbfile.rdb").unwrap();
+    let header = format!("${}\r\n", rdb_file_bytes.len());
+
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(&rdb_file_bytes);
+
+    // assuming slave doesn't send psync again
+    let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
+    tcp_vecc.push(stream.try_clone().unwrap());
+}
+
+// handle wait cmd
 pub fn handle_wait(
     elems: &Vec<String>,
     tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>,
@@ -603,64 +692,7 @@ pub fn handle_wait(
     return response;
 }
 
-pub fn handle_get(
-    dir_clone: &Arc<Mutex<Option<String>>>,
-    dbfilename_clone: &Arc<Mutex<Option<String>>>,
-    elems: &Vec<String>,
-    store: &types::SharedStore,
-) -> String {
-    let dir = &*dir_clone.lock().unwrap();
-    let dbfilename = &*dbfilename_clone.lock().unwrap();
-    let key = elems[1].clone();
-
-    // early return if dir & dbfielname doesn't exists
-    let (Some(dir), Some(dbfilename)) = (dir, dbfilename) else {
-        return handle_get_old(elems, store);
-    };
-
-    let path = format!("{}/{}", dir, dbfilename);
-    let data = fs::read(path).unwrap();
-
-    let (kv, kv_fc, kv_fd) = helper::parse_db(&data);
-
-    // kv pair
-    let resp = if let Some(kv_pair) = kv.iter().find(|p| p[0] == key) {
-        let key = &kv_pair[1];
-        let resp = format!("${}\r\n{}\r\n", key.len(), key);
-        resp
-        // kv pair with milliseconds timeout
-    } else if let Some(kv_pair_fc) = kv_fc.iter().find(|p| p[0] == key) {
-        let expiry = kv_pair_fc[2].parse::<u64>().unwrap();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-
-        if now as u64 > expiry {
-            "$-1\r\n".to_string()
-        } else {
-            format!("${}\r\n{}\r\n", kv_pair_fc[1].len(), kv_pair_fc[1])
-        }
-    // kv pair with seconds timeout
-    } else if let Some(kv_pair_fd) = kv_fd.iter().find(|p| p[0] == key) {
-        let expiry = kv_pair_fd[2].parse::<u32>().unwrap();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        if now as u32 > expiry {
-            "$-1\r\n".to_string()
-        } else {
-            format!("${}\r\n{}\r\n", kv_pair_fd[1].len(), kv_pair_fd[1])
-        }
-    } else {
-        "-ERR key doesn't exists in RDB file".to_string()
-    };
-
-    resp
-}
-
+// handle config cmd
 pub fn handle_config(
     dir_clone: &Arc<Mutex<Option<String>>>,
     dbfilename_clone: &Arc<Mutex<Option<String>>>,
@@ -693,6 +725,7 @@ pub fn handle_config(
     }
 }
 
+// handle keys cmd
 pub fn handle_keys(
     dir_clone: &Arc<Mutex<Option<String>>>,
     dbfilename_clone: &Arc<Mutex<Option<String>>>,
@@ -728,6 +761,7 @@ pub fn handle_keys(
     return helper::elements_arr_to_resp_arr(&k_arr);
 }
 
+// handle subscribe cmd
 pub fn handle_subscribe(
     elems: Vec<String>,
     is_subscribed: &mut bool,
@@ -765,6 +799,7 @@ pub fn handle_subscribe(
     resp
 }
 
+// handle publish cmd
 pub fn handle_publish(
     elems: Vec<String>,
     subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
@@ -784,6 +819,7 @@ pub fn handle_publish(
     }
 }
 
+// handle unsubscribe cmd
 pub fn handle_unsubscribe(
     elems: Vec<String>,
     subs_htable: &Arc<Mutex<HashMap<String, Vec<TcpStream>>>>,
@@ -825,6 +861,7 @@ pub fn handle_unsubscribe(
     }
 }
 
+// handle zadd cmd
 pub fn handle_zadd(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -857,6 +894,7 @@ pub fn handle_zadd(
     resp.to_string()
 }
 
+// handle zrank cmd
 pub fn handle_zrank(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -894,6 +932,7 @@ pub fn handle_zrank(
     resp
 }
 
+// handle zrange cmd
 pub fn handle_zrange(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -957,6 +996,7 @@ pub fn handle_zrange(
     resp
 }
 
+// handle zcard cmd
 pub fn handle_zcard(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -977,6 +1017,7 @@ pub fn handle_zcard(
     resp
 }
 
+// handle zscore cmd
 pub fn handle_zscore(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1003,6 +1044,7 @@ pub fn handle_zscore(
     resp
 }
 
+// handle zrem cmd
 pub fn handle_zrem(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1032,6 +1074,7 @@ pub fn handle_zrem(
     resp
 }
 
+// handle geoadd cmd
 pub fn handle_geoadd(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1070,6 +1113,7 @@ pub fn handle_geoadd(
     resp.to_string()
 }
 
+// handle geopos cmd
 pub fn handle_geopos(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1106,6 +1150,7 @@ pub fn handle_geopos(
     coords
 }
 
+// handle geodist cmd
 pub fn handle_geodist(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1146,6 +1191,7 @@ pub fn handle_geodist(
     resp
 }
 
+// handle geosearch cmd
 pub fn handle_geosearch(
     zset_hmap: &Arc<Mutex<HashMap<String, types::ZSet>>>,
     elems: Vec<String>,
@@ -1183,6 +1229,7 @@ pub fn handle_geosearch(
     resp
 }
 
+// handle acl cmd
 pub fn handle_acl(
     elems: Vec<String>,
     userpw_hmap_clone: &Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>>,
@@ -1243,6 +1290,7 @@ pub fn handle_acl(
     resp
 }
 
+// handle auth cmd
 pub fn handle_auth(
     elems: Vec<String>,
     userpw_hmap_clone: &Arc<Mutex<HashMap<String, Vec<[u8; 32]>>>>,
@@ -1271,18 +1319,4 @@ pub fn handle_auth(
     }
 
     return "-WRONGPASS invalid username-password pair or user is disabled.\r\n".to_string();
-}
-
-pub fn handle_psync(stream: &mut TcpStream, tcpstream_vector_clone: &Arc<Mutex<Vec<TcpStream>>>) {
-    let _ = stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n");
-
-    let rdb_file_bytes = fs::read("rdbfile.rdb").unwrap();
-    let header = format!("${}\r\n", rdb_file_bytes.len());
-
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(&rdb_file_bytes);
-
-    // assuming slave doesn't send psync again
-    let mut tcp_vecc = tcpstream_vector_clone.lock().unwrap();
-    tcp_vecc.push(stream.try_clone().unwrap());
 }
