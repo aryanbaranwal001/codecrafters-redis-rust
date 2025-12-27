@@ -18,18 +18,6 @@ fn main() {
         .map(|p| format!("{}", p))
         .unwrap_or_else(|| "6379".to_string());
 
-    if let Some(_) = args.dir {
-        let dir = args.dir.as_ref().unwrap();
-        let dbfilename = args.dbfilename.as_ref().unwrap();
-
-        // create a new .rdb file
-        let _ = fs::copy(
-            format!("./emptrywkeys.rdb"),
-            format!("{}/{}", dir, dbfilename),
-        );
-        println!("[info] created {}/{}", dir, dbfilename);
-    }
-
     let dir = Arc::new(Mutex::new(args.dir));
     let dbfilename = Arc::new(Mutex::new(args.dbfilename));
 
