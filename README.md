@@ -16,6 +16,10 @@ This is a Redis implementation written in Rust — built as part of the
 This project focuses on understanding how Redis works **under the hood** — sockets, event
 loops, and the RESP (Redis Serialization Protocol), etc — instead of relying on high-level libraries.
 
+> **Note:** 
+> No AI tools or code generators were used while implementing this. \
+> The entire project was written by hand.
+
 ## Features Implemented
 
 This implementation currently supports:

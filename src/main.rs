@@ -24,8 +24,8 @@ fn main() {
     let store: types::SharedStore = Arc::new((Mutex::new(HashMap::new()), Condvar::new()));
     let main_list: types::SharedMainList = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
 
-    // if role == slave, handling connection with master
     let role = if let Some(replicaof_string) = args.replicaof {
+        // handling connection with master as slave
         let (master_url, marter_port) = replicaof_string
             .split_once(" ")
             .expect("[error] invalid format (expected: HOST PORT)");
