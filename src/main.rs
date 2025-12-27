@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex};
-use std::{fs, thread};
+use std::thread;
 
 use crate::types::UserInfo;
 
@@ -15,7 +15,7 @@ fn main() {
     let args = types::Args::parse();
     let port = args
         .port
-        .map(|p| format!("{}", p))
+        .map(|p| p.to_string())
         .unwrap_or_else(|| "6379".to_string());
 
     let dir = Arc::new(Mutex::new(args.dir));
@@ -27,11 +27,11 @@ fn main() {
     let role = if let Some(replicaof_string) = args.replicaof {
         let (master_url, marter_port) = replicaof_string
             .split_once(" ")
-            .expect("[ERROR] [SLAVE] invalid format (expected: HOST PORT)");
+            .expect("[error] [slave] invalid format (expected: HOST PORT)");
 
         let master_addr = format!("{master_url}:{marter_port}");
         let mut master_stream = TcpStream::connect(&master_addr).unwrap();
-        println!("[info] [SLAVE] connected with master with addr: {master_addr}");
+        println!("[info] [slave] connected with master with addr: {master_addr}");
 
         let store_clone = Arc::clone(&store);
         let main_list_clone = Arc::clone(&main_list);

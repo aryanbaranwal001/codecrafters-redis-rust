@@ -467,32 +467,25 @@ pub fn handle_multi(
     store: &types::SharedStore,
     main_list_store: &types::SharedMainList,
 ) {
-    let mut multi_cmd_buffer = [0; 512];
+    let mut cmd_buf = [0; 512];
     let _ = stream.write_all(b"+OK\r\n");
 
-    let mut vector_of_commands: Vec<Vec<String>> = Vec::new();
+    let mut cmds: Vec<Vec<String>> = Vec::new();
 
     loop {
-        match stream.read(&mut multi_cmd_buffer) {
+        match stream.read(&mut cmd_buf) {
             Ok(0) => {
                 println!("[info] connection disconnected");
                 return;
             }
-            Ok(_n) => {
-                let mut counter = 0;
-                let no_of_elements;
 
-                (no_of_elements, counter) = helper::parse_number(&multi_cmd_buffer, counter);
+            Ok(_) => {
+                let (no_of_elements, counter) = helper::parse_number(&cmd_buf, 0);
 
-                let (cmd_array, _) =
-                    helper::parsing_elements(&multi_cmd_buffer, counter, no_of_elements);
+                let (cmd_array, _) = helper::parsing_elements(&cmd_buf, counter, no_of_elements);
 
                 if cmd_array[0].to_ascii_lowercase() == "exec" {
-                    let response = helper::handle_exec_under_multi(
-                        &vector_of_commands,
-                        store,
-                        main_list_store,
-                    );
+                    let response = helper::handle_exec_under_multi(&cmds, store, main_list_store);
                     let _ = stream.write_all(response.as_bytes());
                     break;
                 } else if cmd_array[0].to_ascii_lowercase() == "discard" {
@@ -500,7 +493,7 @@ pub fn handle_multi(
                     break;
                 }
 
-                vector_of_commands.push(cmd_array);
+                cmds.push(cmd_array);
 
                 let _ = stream.write_all(b"+QUEUED\r\n");
             }
