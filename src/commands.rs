@@ -121,7 +121,7 @@ pub fn handle_get(
             format!("${}\r\n{}\r\n", kv_pair_fd[1].len(), kv_pair_fd[1])
         }
     } else {
-        "-ERR key doesn't exists in RDB file".to_string()
+        "-ERR key doesn't exists in RDB file\r\n".to_string()
     };
 
     resp
@@ -449,11 +449,11 @@ pub fn handle_xrange(elems: &mut Vec<String>, store: &types::SharedStore) -> Str
             return final_arr;
         }
 
-        return "-ERR entry is not a stream".to_string();
+        return "-ERR entry is not a stream\r\n".to_string();
 
         // stream doesn't exists
     } else {
-        return "-ERR stream with given key doesn't exists".to_string();
+        return "-ERR stream with given key doesn't exists\r\n".to_string();
     }
 }
 
@@ -706,7 +706,7 @@ pub fn handle_config(
                     let arr = vec!["dir".to_string(), dir.clone()];
                     return helper::elements_arr_to_resp_arr(&arr);
                 } else {
-                    "-ERR error getting dir".to_string()
+                    "-ERR error getting dir\r\n".to_string()
                 }
             }
             "dbfilename" => {
@@ -715,13 +715,13 @@ pub fn handle_config(
                     let arr = vec![dbfilename.clone(), "dbfilename".to_string()];
                     return helper::elements_arr_to_resp_arr(&arr);
                 } else {
-                    "-ERR error getting dbfilename".to_string()
+                    "-ERR error getting dbfilename\r\n".to_string()
                 }
             }
-            _ => "-ERR wrong arguement".to_string(),
+            _ => "-ERR wrong arguement\r\n".to_string(),
         }
     } else {
-        "-ERR not a GET command".to_string()
+        "-ERR not a GET command\r\n".to_string()
     }
 }
 
@@ -735,7 +735,7 @@ pub fn handle_keys(
     let dbfilename = &*dbfilename_clone.lock().unwrap();
 
     if elems[1] != "*" {
-        return "-ERR Wrong field with KEYS command".to_string();
+        return "-ERR Wrong field with KEYS command\r\n".to_string();
     }
 
     let (Some(dir), Some(dbfilename)) = (dir.as_ref(), dbfilename.as_ref()) else {
@@ -815,7 +815,7 @@ pub fn handle_publish(
         }
         format!(":{}\r\n", subs_len)
     } else {
-        "-ERR channel doesn't exists".to_string()
+        "-ERR channel doesn't exists\r\n".to_string()
     }
 }
 
@@ -857,7 +857,7 @@ pub fn handle_unsubscribe(
 
         resp
     } else {
-        "-ERR channel doesn't exists".to_string()
+        "-ERR channel doesn't exists\r\n".to_string()
     }
 }
 
@@ -1163,7 +1163,7 @@ pub fn handle_geodist(
     let zset = match hmap.get_mut(geo_key) {
         Some(z) => z,
         None => {
-            return "-ERR coords do not exists".to_string();
+            return "-ERR coords do not exists\r\n".to_string();
         }
     };
 
@@ -1180,7 +1180,7 @@ pub fn handle_geodist(
     let coords_vec = match coords {
         Some(v) => v,
         None => {
-            return "-ERR coords do not exists".to_string();
+            return "-ERR coords do not exists\r\n".to_string();
         }
     };
 
@@ -1205,7 +1205,7 @@ pub fn handle_geosearch(
     let zset = match hmap.get_mut(geo_key) {
         Some(z) => z,
         None => {
-            return "-ERR coords do no exists".to_string();
+            return "-ERR coords do no exists\r\n".to_string();
         }
     };
 
@@ -1284,7 +1284,7 @@ pub fn handle_acl(
             "+OK\r\n".to_string()
         }
 
-        _ => "-ERR Invalid Flag".to_string(),
+        _ => "-ERR Invalid Flag\r\n".to_string(),
     };
 
     resp
@@ -1306,7 +1306,7 @@ pub fn handle_auth(
 
     let hash_vec = match userpw_hmap.get(user) {
         Some(v) => v,
-        None => return "-ERR username doesn't exists".to_string(),
+        None => return "-ERR username doesn't exists\r\n".to_string(),
     };
 
     let hash_v: Vec<String> = hash_vec.iter().map(|hash| hex::encode(hash)).collect();

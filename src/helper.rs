@@ -16,6 +16,7 @@ const MAX_LATITUDE: f64 = 85.05112878;
 const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
 const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
+/// calculates the distance between two points and return it
 pub fn haversine(coords: Vec<[String; 2]>) -> String {
     let lon1 = coords[0][0].parse::<f64>().unwrap();
     let lat1 = coords[0][1].parse::<f64>().unwrap();
@@ -36,6 +37,7 @@ pub fn haversine(coords: Vec<[String; 2]>) -> String {
     (r * c).to_string()
 }
 
+/// get coordinates from geocode/geo_score
 pub fn get_coordinates(geo_code: u64) -> (f64, f64) {
     let y = geo_code >> 1;
     let x = geo_code;
@@ -55,7 +57,7 @@ pub fn get_coordinates(geo_code: u64) -> (f64, f64) {
     let longitude = (grid_longitude_min + grid_longitude_max) / 2.0;
     return (latitude, longitude);
 }
-
+/// helper fn to get coordinates from geocode/geo_score
 fn compact_int64_to_int32(v: i64) -> i32 {
     let mut v = v & 0x5555555555555555;
 
@@ -67,6 +69,7 @@ fn compact_int64_to_int32(v: i64) -> i32 {
     return v as i32;
 }
 
+/// gets geo_score/geocode of a coordinate from its latitude and longitude
 pub fn get_score(lon: f64, lat: f64) -> u64 {
     let scale = (1u64 << 26) as f64;
 
@@ -82,6 +85,7 @@ pub fn get_score(lon: f64, lat: f64) -> u64 {
     return (nor_lat | lon_shifted) as u64;
 }
 
+/// helper fn to calculate geo_score/geocode of a coordinate from its latitude and longitude
 pub fn spread_int32_to_int64(v: u32) -> u64 {
     // Ensure only lower 32 bits are non-zero.
     let mut v = v as u64;
@@ -97,11 +101,14 @@ pub fn spread_int32_to_int64(v: u32) -> u64 {
     return v as u64;
 }
 
+/// checks if a subscriber is already subscribed to a channel
+/// returns true if its already subscribed
 pub fn alread_present(subscribers: &Vec<TcpStream>, stream: &TcpStream) -> bool {
     let addr = stream.peer_addr().ok();
     subscribers.iter().any(|subs| subs.peer_addr().ok() == addr)
 }
 
+/// if a connection is subscribed, handle its connection accordinly
 pub fn handle_subscribed_mode(
     mut stream: TcpStream,
     bytes_received: &[u8],
@@ -257,6 +264,7 @@ pub fn handle_subscribed_mode(
     stream
 }
 
+/// read and process the data from an rdbfile
 pub fn parse_db(data: &Vec<u8>) -> (Vec<[String; 2]>, Vec<[String; 3]>, Vec<[String; 3]>) {
     // fe => start of database
     // 00 index of database
@@ -369,6 +377,7 @@ fn parse_kv(counter: usize, data: &Vec<u8>) -> (usize, Vec<u8>) {
     (c, kv)
 }
 
+/// takes an elements arr and gives a resp string
 pub fn elements_arr_to_resp_arr(elems: &Vec<String>) -> String {
     let mut resp = format!("*{}\r\n", elems.len());
     for item in elems {
@@ -839,7 +848,7 @@ pub fn get_start_and_end_indexes(elems: &Vec<String>) -> (u128, u128, u128, u128
     (start_time, start_seq, end_time, end_seq)
 }
 
-// handle expiry
+/// handle expiry
 pub fn handle_expiry(time_setter_args: &str, elems: Vec<String>) -> Option<Instant> {
     match time_setter_args.to_ascii_lowercase().as_str() {
         "px" => {
@@ -858,8 +867,8 @@ pub fn handle_expiry(time_setter_args: &str, elems: Vec<String>) -> Option<Insta
     }
 }
 
-// offset must be at '$' or '*'
-// returned coutner is whatever is immediately after \r\n
+/// offset must be at '$' or '*'
+/// returned coutner is whatever is immediately after \r\n
 pub fn parse_number(bytes_received: &[u8], mut offset: usize) -> (usize, usize) {
     let mut num_in_bytes: Vec<u8> = vec![];
 
@@ -889,7 +898,7 @@ pub fn parse_number(bytes_received: &[u8], mut offset: usize) -> (usize, usize) 
     }
 }
 
-// get the elements in Vec<String> from resp
+/// get the elements in Vec<String> from resp
 pub fn parsing_elements(
     bytes_received: &[u8],
     mut offset: usize,
@@ -920,6 +929,7 @@ pub fn parsing_elements(
     (elems, offset)
 }
 
+/// does as the fn name suggest
 pub fn get_start_and_end_indexes_for_xread(start_id: &String) -> (u128, u128, u128, u128) {
     let start_id_time;
     let start_id_seq;
@@ -969,6 +979,7 @@ pub fn adjust_xread_start_ids(map: &HashMap<String, types::ValueEntry>, elems: &
     }
 }
 
+/// get array of streams
 pub fn get_streams_array(
     map: &HashMap<String, types::ValueEntry>,
     elems: &Vec<String>,
@@ -1055,6 +1066,7 @@ pub fn get_streams_array(
     (final_array_data_of_streams, no_of_valid_streams)
 }
 
+/// parse rdb to get key value pairs
 pub fn parse_rdb_get_kv(data: &Vec<u8>) -> Vec<[String; 2]> {
     // fe => start of database
     // 00 index of database
